@@ -43,8 +43,16 @@ export async function POST(req, { params }) {
     const { reviewerId } = await verifyReviewToken(params.token);
     const body = await req.json();
     const employeeId = t(body.employeeId);
-    const items = Array.isArray(body.items) ? body.items : [];
-    const commentProp = null; // комментарии пока отключим; включите нужную колонку, если хотите
+    const items = res.results.map((r) => {
+    const props = r.properties;
+    const field = ROLE_TO_FIELD[role];
+    const current = props[field]?.number ?? null;
+    const skillName = getSkillNameFromProps(props);
+    const description = getSkillDescFromProps(props); // <-- ДОБАВИЛИ
+    return { pageId: r.id, skillName, description, current }; // <-- ДОБАВИЛИ description
+  });
+
+    
 
     if (!employeeId) {
       return NextResponse.json({ error: "employeeId is required" }, { status: 400 });
