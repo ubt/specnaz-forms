@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import ScoreRow from "@/components/ScoreRow";
+import ScoreRow from "../../../components/ScoreRow";
 
 export default function FormPage({ params }) {
   const [items, setItems] = useState([]);
@@ -11,15 +11,24 @@ export default function FormPage({ params }) {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(`/api/form/${params.token}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) { setMsg(data.error || "Ошибка загрузки"); return; }
-      setItems(data.items);
-      setRole(data.role);
-      const initial = {};
-      data.items.forEach((i)=> initial[i.pageId] = { value: i.current ?? 0, comment: "" });
-      setDraft(initial);
-      setLoading(false);
+      try {
+        const res = await fetch(`/api/form/${params.token}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) {
+          setMsg(data.error || "Ошибка загрузки");
+          setLoading(false);               // ✅ раньше этого не было
+          return;
+        }
+        setItems(data.items || []);
+        setRole(data.role || "");
+        const initial = {};
+        (data.items || []).forEach((i)=> initial[i.pageId] = { value: i.current ?? 0, comment: "" });
+        setDraft(initial);
+      } catch (e) {
+        setMsg("Сетевая ошибка");
+      } finally {
+        setLoading(false);                 // ✅ всегда снимаем загрузку
+      }
     })();
   }, [params.token]);
 
@@ -39,6 +48,8 @@ export default function FormPage({ params }) {
   }
 
   if (loading) return <div style={{ padding: 24 }}>Загрузка…</div>;
+  if (msg) return <div style={{ padding: 24, color: "#b00" }}>Ошибка: {msg}</div>;
+  if (!items.length) return <div style={{ padding: 24 }}>По этому сотруднику в матрице нет строк (Employee×Skill). Проверьте ID сотрудника и связи.</div>;
 
   return (
     <main style={{ padding: 24 }}>
