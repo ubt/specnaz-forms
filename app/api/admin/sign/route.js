@@ -20,30 +20,22 @@ export async function POST(req) {
   const expDays = Number(body.expDays ?? 14);
   if (!teamName) return NextResponse.json({ error: "teamName is required" }, { status: 400 });
 
-  // 1) найдём сотрудников команды
-  const employees = await findEmployeesByTeam(teamName); // [{pageId, name}]
-  if (!employees.length) {
-    return NextResponse.json({ links: [], teamName, note: "no_employees_found" });
-  }
+  // 1) сотрудники команды
+  const employees = await findEmployeesByTeam(teamName); // [{pageId,name,userIds}]
+  if (!employees.length) return NextResponse.json({ ok:true, teamName, links: [], note: "no_employees_found" });
 
-  // 2) соберём всех ревьюеров для этих сотрудников
-  const reviewers = await listReviewersForEmployees(employees); // [{ reviewerId, reviewerUserId, name, idType }]
-  if (!reviewers.length) {
-    return NextResponse.json({ links: [], teamName, note: "no_reviewers_found" });
-  }
+  // 2) все ревьюеры (уникальные по userId)
+  const reviewers = await listReviewersForEmployees(employees); // [{ reviewerUserId, name }]
+  if (!reviewers.length) return NextResponse.json({ ok:true, teamName, links: [], note: "no_reviewers_found" });
 
-  // 3) сгенерируем по ссылке на каждого
+  // 3) токены только по reviewerUserId
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   const exp = Math.floor(Date.now()/1000) + expDays*24*3600;
 
   const links = [];
   for (const r of reviewers) {
-    const token = await signReviewToken({ reviewerId: r.reviewerId, reviewerUserId: r.reviewerUserId, exp });
-    links.push({
-      name: r.name,
-      idType: r.idType, // "page" или "user"
-      url: `${base}/form/${token}`
-    });
+    const token = await signReviewToken({ reviewerUserId: r.reviewerUserId, exp });
+    links.push({ name: r.name, url: `${base}/form/${token}` });
   }
 
   return NextResponse.json({ ok: true, teamName, count: links.length, links });
