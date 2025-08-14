@@ -3,8 +3,8 @@ export const runtime = "edge";
 import { NextResponse } from "next/server";
 import { verifyReviewToken } from "@/lib/token";
 import {
-  listEvaluateesForReviewer,
-  fetchEmployeeSkillRowsForReviewer,
+  listEvaluateesForReviewerUser,
+  fetchEmployeeSkillRowsForReviewerUser,
   ROLE_TO_FIELD,
   updateScore,
 } from "@/lib/notion";
@@ -13,23 +13,28 @@ function t(s){return (s||"").trim();}
 
 export async function GET(req, { params }) {
   try {
-    const { reviewerId } = await verifyReviewToken(params.token);
-    if (!t(reviewerId)) {
-      return NextResponse.json({ error: "Invalid token (no reviewerId)" }, { status: 401 });
+    const payload = await verifyReviewToken(params.token);
+    const reviewerUserId = t(payload.reviewerUserId);
+    if (!reviewerUserId) {
+      return NextResponse.json({ error: "Invalid token (no reviewerUserId)" }, { status: 401 });
     }
 
     const { searchParams } = new URL(req.url);
     const employeeId = t(searchParams.get("employeeId"));
 
     if (!employeeId) {
-      // МОД 1: вернуть список сотрудников, которых этот ревьюер может оценить
-      const evaluatees = await listEvaluateesForReviewer(reviewerId);
-      return NextResponse.json({ evaluatees }); // [{employeeId, employeeName, role}]
+      const { evaluatees, warning } = await listEvaluateesForReviewerUser(reviewerUserId);
+      if (warning === "no_compatible_filters") {
+        return NextResponse.json({
+          error: "В БД не найдены совместимые поля для фильтрации по People/Relation.",
+          evaluatees: []
+        }, { status: 400 });
+      }
+      return NextResponse.json({ evaluatees });
     } else {
-      // МОД 2: вернуть навыки для выбранного сотрудника + роль
-      const { role, items } = await fetchEmployeeSkillRowsForReviewer(employeeId, reviewerId);
+      const { role, items } = await fetchEmployeeSkillRowsForReviewerUser(employeeId, reviewerUserId);
       if (!role) {
-        return NextResponse.json({ error: "You are not assigned to this employee", items: [], role: null }, { status: 403 });
+        return NextResponse.json({ error: "Вы не назначены оценивать этого сотрудника", items: [], role: null }, { status: 403 });
       }
       return NextResponse.json({ role, items });
     }
@@ -40,36 +45,27 @@ export async function GET(req, { params }) {
 
 export async function POST(req, { params }) {
   try {
-    const { reviewerId } = await verifyReviewToken(params.token);
+    const payload = await verifyReviewToken(params.token);
+    const reviewerUserId = t(payload.reviewerUserId);
+    if (!reviewerUserId) {
+      return NextResponse.json({ error: "Invalid token (no reviewerUserId)" }, { status: 401 });
+    }
+
     const body = await req.json();
     const employeeId = t(body.employeeId);
-    const items = res.results.map((r) => {
-    const props = r.properties;
+    const items = Array.isArray(body.items) ? body.items : [];
+    const commentProp = null; // при необходимости укажите имя поля для комментариев
+
+    if (!employeeId) return NextResponse.json({ error: "employeeId is required" }, { status: 400 });
+
+    const { role } = await fetchEmployeeSkillRowsForReviewerUser(employeeId, reviewerUserId);
+    if (!role) return NextResponse.json({ error: "Вы не назначены оценивать этого сотрудника" }, { status: 403 });
+
     const field = ROLE_TO_FIELD[role];
-    const current = props[field]?.number ?? null;
-    const skillName = getSkillNameFromProps(props);
-    const description = getSkillDescFromProps(props); // <-- ДОБАВИЛИ
-    return { pageId: r.id, skillName, description, current }; // <-- ДОБАВИЛИ description
-  });
-
-    
-
-    if (!employeeId) {
-      return NextResponse.json({ error: "employeeId is required" }, { status: 400 });
-    }
-
-    // Определим роль по этому сотруднику и ревьюеру
-    const { role } = await fetchEmployeeSkillRowsForReviewer(employeeId, reviewerId);
-    if (!role) {
-      return NextResponse.json({ error: "You are not assigned to this employee" }, { status: 403 });
-    }
-    const field = ROLE_TO_FIELD[role];
-
-    // Бережно к лимитам Notion
-    const queue = [...items];
+    const q = [...items];
     const workers = Array.from({ length: 2 }, async () => {
-      while (queue.length) {
-        const it = queue.shift();
+      while (q.length) {
+        const it = q.shift();
         await updateScore(it.pageId, field, it.value, it.comment, commentProp);
       }
     });
