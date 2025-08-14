@@ -56,7 +56,7 @@ export default function Admin() {
       <input type="number" min={1} max={90} value={expDays} onChange={e=>setExpDays(Number(e.target.value))} style={input} />
 
       <label style={label}>Admin key</label>
-      <input value={adminKey} onChange={e=>setAdminKey(e.target.value)} placeholder="ADMIN_KEY" style={input} />
+      <input type="password" value={adminKey} onChange={e=>setAdminKey(e.target.value)} placeholder="ADMIN_KEY" style={input} />
 
       {loading ? (
         <div style={{ margin: "12px 0", height: 8, background: "#eee", borderRadius: 4, overflow: "hidden", maxWidth: 420 }}>
