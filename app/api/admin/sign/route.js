@@ -7,6 +7,7 @@ import { findEmployeesByTeam, listReviewersForEmployees } from "@/lib/notion";
 function t(s){return (s||"").trim();}
 
 export async function POST(req) {
+  try {
   const hdrKey = t(req.headers.get("x-admin-key"));
   let body = {};
   try { body = await req.json(); } catch {}
@@ -39,4 +40,9 @@ export async function POST(req) {
   }
 
   return NextResponse.json({ ok: true, teamName, count: links.length, links });
+  } catch (e) {
+    console.error('admin/sign error', e);
+    return NextResponse.json({ error: e?.message || 'Internal Server Error' }, { status: 500 });
+  }
+
 }

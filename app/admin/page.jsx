@@ -1,5 +1,12 @@
 
 "use client";
+
+async function parseResponse(res){
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  if (ct.includes("application/json")) { try { return await res.json(); } catch { return null; } }
+  try { const t = await res.text(); return t ? { error: t } : null; } catch { return null; }
+}
+
 import { useState } from "react";
 
 export default function Admin() {
@@ -22,8 +29,8 @@ export default function Admin() {
         headers: { "Content-Type":"application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ teamName, expDays, adminKey })
       });
-      const data = await res.json();
-      if (!res.ok) { setMsg(data?.error || "Ошибка"); return; }
+      const data = await parseResponse(res);
+      if (!res.ok) { setMsg((data && (data.error||data.message)) || `HTTP ${res.status}`); setLoading(false); return; }
       setLinks(data.links || []);
       setMsg(`Команда: ${data.teamName}. Ссылок: ${data.count || (data.links||[]).length}.`);
     } catch (e) {
