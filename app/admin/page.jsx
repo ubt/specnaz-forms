@@ -57,7 +57,6 @@ export default function Admin() {
             <thead>
               <tr>
                 <th style={{ textAlign:"left", borderBottom:"1px solid #eee", padding:"6px 4px" }}>Кому</th>
-                <th style={{ textAlign:"left", borderBottom:"1px solid #eee", padding:"6px 4px" }}>Тип ID</th>
                 <th style={{ textAlign:"left", borderBottom:"1px solid #eee", padding:"6px 4px" }}>Ссылка</th>
               </tr>
             </thead>
@@ -65,7 +64,6 @@ export default function Admin() {
               {links.map((l, i) => (
                 <tr key={i}>
                   <td style={{ padding:"6px 4px" }}>{l.name}</td>
-                  <td style={{ padding:"6px 4px" }}>{l.idType}</td>
                   <td style={{ padding:"6px 4px" }}>
                     <a href={l.url} target="_blank" rel="noreferrer">{l.url}</a>
                   </td>
