@@ -34,7 +34,7 @@ export default function Admin() {
       <h1>Ссылки на оценку по команде</h1>
       <div style={row}>
         <label style={{ width: 160 }}>Команда:</label>
-        <input value={teamName} onChange={(e)=>setTeamName(e.target.value)} style={input} placeholder="например: Platform" />
+        <input value={teamName} onChange={(e)=>setTeamName(e.target.value)} style={input} placeholder="например: PROC-1" />
       </div>
       <div style={row}>
         <label style={{ width: 160 }}>Срок (дней):</label>
