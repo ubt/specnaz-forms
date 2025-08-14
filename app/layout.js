@@ -1,11 +1,7 @@
-export const metadata = { title: "Skill Review" };
+export const runtime = 'edge';
 
-export default function RootLayout({ children }) {
-  return (
-    <html lang="ru">
-      <body style={{ fontFamily: "system-ui, sans-serif", maxWidth: 960, margin: "0 auto" }}>
-        {children}
-      </body>
-    </html>
-  );
+// Простой «прокладочный» layout для сегмента /form/[token].
+// Он серверный (без "use client"), поэтому Next примет конфиг runtime отсюда.
+export default function FormLayout({ children }) {
+  return <>{children}</>;
 }
