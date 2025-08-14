@@ -7,6 +7,7 @@ import {
   fetchEmployeeSkillRowsForReviewerUser,
   ROLE_TO_FIELD,
   updateScore,
+  detectCommentProp,
 } from "@/lib/notion";
 
 function t(s){return (s||"").trim();}
@@ -54,7 +55,7 @@ export async function POST(req, { params }) {
     const body = await req.json();
     const employeeId = t(body.employeeId);
     const items = Array.isArray(body.items) ? body.items : [];
-    const commentProp = null; // при необходимости укажите имя поля для комментариев
+    const commentProp = await detectCommentProp(); // авто-определение поля для комментариев, если есть
 
     if (!employeeId) return NextResponse.json({ error: "employeeId is required" }, { status: 400 });
 
