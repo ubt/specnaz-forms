@@ -1,4 +1,130 @@
-// app/api/debug/token/[token]/route.js
+// Шаг 5: Прямой поиск в матрице с правильными типами фильтров
+    try {
+      console.log('[TOKEN DEBUG] Searching matrix database directly...');
+      
+      // Получаем типы полей
+      const matrixDb = await notion.databases.retrieve({ database_id: MATRIX_DB_ID });
+      const matrixProps = matrixDb.properties;
+      
+      // Поиск по People полям
+      const peopleSearches = [
+        { field: PROP.selfScorer, name: 'Self Scorer' },
+        { field: PROP.p1Peer, name: 'P1 Peer' },
+        { field: PROP.p2Peer, name: 'P2 Peer' },
+        { field: PROP.managerScorer, name: 'Manager' }
+      ];
+      
+      // Поиск по Relation полям (для поля Employee)
+      const relationSearches = [];
+      if (matrixProps[PROP.employee]?.type === 'relation') {
+        // Для relation поля нужны employee page IDs
+        const employeePages = await getEmployeePagesByUserId(reviewerUserId);
+        if (employeePages.length > 0) {
+          relationSearches.push({
+            field: PROP.employee,
+            name: 'Employee (Relation)',
+            pageIds: employeePages.map(p => p.pageId)
+          });
+        }
+      } else if (matrixProps[PROP.employee]?.type === 'people') {
+        peopleSearches.push({ field: PROP.employee, name: 'Employee (People)' });
+      }
+      
+      const searchResults = {};
+      
+      // Поиск по People полям
+      for (const search of peopleSearches) {
+        try {
+          const result = await notion.databases.query({
+            database_id: MATRIX_DB_ID,
+            filter: {
+              property: search.field,
+              people: { contains: reviewerUserId }
+            },
+            page_size: 10
+          });
+          
+          searchResults[search.field] = {
+            success: true,
+            type: 'people',
+            count: result.results.length,
+            rows: result.results.map(row => ({
+              id: row.id,
+              employee: row.properties[PROP.employee]?.relation?.[0]?.id || 
+                       row.properties[PROP.employee]?.people?.[0]?.id,
+              [search.field]: row.properties[search.field]?.people?.map(p => p.id)
+            }))
+          };
+          
+          console.log(`[TOKEN DEBUG] Found ${result.results.length} rows for ${search.name} (people)`);
+        } catch (error) {
+          searchResults[search.field] = {
+            success: false,
+            type: 'people',
+            error: error.message
+          };
+        }
+      }
+      
+      // Поиск по Relation полям
+      for (const search of relationSearches) {
+        try {
+          const results = [];
+          for (const pageId of search.pageIds) {
+            const result = await notion.databases.query({
+              database_id: MATRIX_DB_ID,
+              filter: {
+                property: search.field,
+                relation: { contains: pageId }
+              },
+              page_size: 10
+            });
+            results.push(...result.results);
+          }
+          
+          searchResults[search.field] = {
+            success: true,
+            type: 'relation',
+            count: results.length,
+            searchedPageIds: search.pageIds,
+            rows: results.map(row => ({
+              id: row.id,
+              employee: row.properties[PROP.employee]?.relation?.[0]?.id,
+              [search.field]: row.properties[search.field]?.relation?.map(r => r.id)
+            }))
+          };
+          
+          console.log(`[TOKEN DEBUG] Found ${results.length} rows for ${search.name} (relation)`);
+        } catch (error) {
+          searchResults[search.field] = {
+            success: false,
+            type: 'relation',
+            error: error.message
+          };
+        }
+      }
+      
+      debug.step5_direct_search = {
+        success: true,
+        propertyTypes: {
+          [PROP.employee]: matrixProps[PROP.employee]?.type,
+          [PROP.selfScorer]: matrixProps[PROP.selfScorer]?.type,
+          [PROP.p1Peer]: matrixProps[PROP.p1Peer]?.type,
+          [PROP.p2Peer]: matrixProps[PROP.p2Peer]?.type,
+          [PROP.managerScorer]: matrixProps[PROP.managerScorer]?.type,
+        },
+        searches: searchResults,
+        totalMatches: Object.values(searchResults)
+          .filter(r => r.success)
+          .reduce((sum, r) => sum + r.count, 0)
+      };
+      
+    } catch (error) {
+      debug.step5_direct_search = {
+        success: false,
+        error: error.message
+      };
+    }// app/api/debug/token/[token]/route.js
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
