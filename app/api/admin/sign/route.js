@@ -1,18 +1,9 @@
 export const runtime = "edge";
-export const dynamic = 'force-dynamic';
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-
-// Безопасные импорты с обработкой ошибок
-async function safeImport(modulePath) {
-  try {
-    return await import(modulePath);
-  } catch (error) {
-    console.error(`[IMPORT ERROR] Failed to import ${modulePath}:`, error.message);
-    throw new Error(`Module import failed: ${modulePath} - ${error.message}`);
-  }
-}
+import { signReviewToken } from "@/lib/token";
+import { findEmployeesByTeam, listReviewersForEmployees, PerformanceTracker } from "@/lib/notion";
 
 const ReqSchema = z.object({
   teamName: z.string().min(1).max(100),
@@ -23,10 +14,8 @@ const ReqSchema = z.object({
 
 function t(s) { return (s || "").trim(); }
 
-// Улучшенная проверка переменных окружения с детальной диагностикой
+// Проверка обязательных переменных окружения
 function validateEnvironment() {
-  console.log('[ENV CHECK] Starting environment validation...');
-  
   const required = {
     ADMIN_KEY: process.env.ADMIN_KEY,
     JWT_SECRET: process.env.JWT_SECRET,
@@ -36,77 +25,47 @@ function validateEnvironment() {
     EMPLOYEES_DB_ID: process.env.EMPLOYEES_DB_ID
   };
   
-  // Детальная проверка каждой переменной
-  const validation = {};
-  for (const [key, value] of Object.entries(required)) {
-    const exists = !!value;
-    const hasContent = exists && value.trim().length > 0;
-    const isValidLength = hasContent && value.trim().length > 3;
-    
-    validation[key] = {
-      exists,
-      hasContent,
-      isValidLength,
-      length: exists ? value.length : 0,
-      preview: exists ? `${value.substring(0, 8)}...` : 'undefined'
-    };
-    
-    console.log(`[ENV CHECK] ${key}: exists=${exists}, hasContent=${hasContent}, length=${validation[key].length}`);
-  }
-  
-  const missing = Object.entries(validation)
-    .filter(([key, info]) => !info.isValidLength)
+  const missing = Object.entries(required)
+    .filter(([key, value]) => !value?.trim())
     .map(([key]) => key);
     
   if (missing.length > 0) {
-    console.error('[ENV CHECK] Missing or invalid environment variables:', missing);
-    throw new Error(`Missing or invalid environment variables: ${missing.join(', ')}`);
+    throw new Error(`Missing environment variables: ${missing.join(', ')}`);
   }
   
-  console.log('[ENV CHECK] ✅ All environment variables are valid');
   return required;
 }
 
 export async function POST(req) {
-  const startTime = Date.now();
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  console.log(`[${requestId}] === ADMIN REQUEST START ===`);
-  console.log(`[${requestId}] Runtime: ${process.env.VERCEL_REGION || 'edge'}`);
-  console.log(`[${requestId}] URL: ${req.url}`);
+  const operation = 'generate-review-links';
+  PerformanceTracker.start(operation);
   
   let body = {};
-  let env = {};
   
   try {
-    // 1. Проверка окружения
-    console.log(`[${requestId}] Step 1: Environment validation`);
-    env = validateEnvironment();
+    // Проверяем переменные окружения в первую очередь
+    console.log('[ENV CHECK] Validating environment variables...');
+    const env = validateEnvironment();
+    console.log('[ENV CHECK] All required environment variables are present');
     
-    // 2. Парсинг заголовков и тела
-    console.log(`[${requestId}] Step 2: Request parsing`);
+    // Парсинг заголовков и тела запроса
     const hdrKey = t(req.headers.get("x-admin-key"));
     
-    try {
-      body = await req.json();
-      console.log(`[${requestId}] Request body:`, { 
-        teamName: body.teamName, 
-        expDays: body.expDays,
-        hasAdminKey: !!body.adminKey 
-      });
+    try { 
+      body = await req.json(); 
     } catch (parseError) {
-      console.error(`[${requestId}] JSON parse error:`, parseError.message);
+      console.error('[PARSE ERROR]', parseError.message);
       return NextResponse.json(
         { error: "Некорректный JSON в теле запроса" }, 
         { status: 400 }
       );
     }
     
-    // 3. Валидация схемы
-    console.log(`[${requestId}] Step 3: Schema validation`);
+    console.log('[REQUEST] Parsing request body...', { teamName: body.teamName, expDays: body.expDays });
+    
     const parsed = ReqSchema.safeParse(body);
     if (!parsed.success) {
-      console.error(`[${requestId}] Schema validation failed:`, parsed.error.issues);
+      console.error('[VALIDATION ERROR]', parsed.error.issues);
       return NextResponse.json(
         { 
           error: "Некорректные параметры",
@@ -117,18 +76,17 @@ export async function POST(req) {
     }
     
     const { teamName, expDays, cycleId } = parsed.data;
-    
-    // 4. Проверка авторизации
-    console.log(`[${requestId}] Step 4: Authorization check`);
+    console.log('[REQUEST] Validated parameters:', { teamName, expDays });
+
+    // Проверка авторизации
     const provided = hdrKey || t(parsed.data.adminKey);
     const required = t(env.ADMIN_KEY);
     
     if (provided !== required) {
-      console.warn(`[${requestId}] Unauthorized access attempt:`, {
+      console.warn('[AUTH] Unauthorized admin access attempt:', {
         hasHeader: !!hdrKey,
         hasBodyKey: !!parsed.data.adminKey,
-        providedLength: provided.length,
-        requiredLength: required.length
+        timestamp: new Date().toISOString()
       });
       
       return NextResponse.json(
@@ -137,107 +95,60 @@ export async function POST(req) {
       );
     }
     
-    // 5. Безопасные импорты модулей
-    console.log(`[${requestId}] Step 5: Module imports`);
-    let tokenModule, notionModule;
+    console.log('[AUTH] Admin authorization successful');
+
+    // Поиск сотрудников по команде
+    console.log('[STEP 1] Searching for employees in team:', teamName);
+    PerformanceTracker.start('find-employees');
     
-    try {
-      tokenModule = await safeImport("@/lib/token");
-      notionModule = await safeImport("@/lib/notion");
-      console.log(`[${requestId}] ✅ All modules imported successfully`);
-    } catch (importError) {
-      console.error(`[${requestId}] Module import failed:`, importError.message);
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? importError.message : undefined
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    const { signReviewToken } = tokenModule;
-    const { 
-      findEmployeesByTeam, 
-      listReviewersForEmployees, 
-      PerformanceTracker 
-    } = notionModule;
-    
-    // 6. Поиск сотрудников команды
-    console.log(`[${requestId}] Step 6: Finding employees for team: ${teamName}`);
-    const employeesStartTime = Date.now();
-    
-    const employees = await Promise.race([
-      findEmployeesByTeam(teamName),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: Employee search took too long')), 15000)
-      )
-    ]);
-    
-    const employeesTime = Date.now() - employeesStartTime;
-    console.log(`[${requestId}] Employee search completed in ${employeesTime}ms`);
+    const employees = await findEmployeesByTeam(teamName);
+    PerformanceTracker.end('find-employees');
     
     if (!employees?.length) {
-      console.warn(`[${requestId}] No employees found for team: ${teamName}`);
+      console.warn('[STEP 1] No employees found for team:', teamName);
       return NextResponse.json(
         { 
           error: `Команда "${teamName}" не найдена или пуста`,
-          suggestion: "Проверьте правильность названия команды в базе данных Notion",
-          debug: {
-            searchTime: employeesTime,
-            teamName: teamName
-          }
+          suggestion: "Проверьте правильность названия команды в базе данных Notion"
         }, 
         { status: 404 }
       );
     }
 
-    console.log(`[${requestId}] ✅ Found ${employees.length} employees:`, 
+    console.log(`[STEP 1] Found ${employees.length} employees:`, 
       employees.map(e => `${e.name} (${e.userIds.length} userIds)`).join(', ')
     );
 
-    // 7. Получение списка ревьюеров
-    console.log(`[${requestId}] Step 7: Finding reviewers`);
-    const reviewersStartTime = Date.now();
+    // Получение списка ревьюеров
+    console.log('[STEP 2] Finding reviewers for employees...');
+    PerformanceTracker.start('find-reviewers');
     
-    const reviewers = await Promise.race([
-      listReviewersForEmployees(employees),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: Reviewer search took too long')), 15000)
-      )
-    ]);
-    
-    const reviewersTime = Date.now() - reviewersStartTime;
-    console.log(`[${requestId}] Reviewer search completed in ${reviewersTime}ms`);
+    const reviewers = await listReviewersForEmployees(employees);
+    PerformanceTracker.end('find-reviewers');
     
     if (!reviewers?.length) {
-      console.warn(`[${requestId}] No reviewers found for team: ${teamName}`);
+      console.warn('[STEP 2] No reviewers found for team:', teamName);
       return NextResponse.json(
         { 
           error: `Не найдено ревьюеров для команды "${teamName}"`,
-          suggestion: "Убедитесь, что в матрице оценок заполнены поля ревьюеров",
-          debug: {
-            employeeCount: employees.length,
-            searchTime: reviewersTime
-          }
+          suggestion: "Убедитесь, что в матрице оценок заполнены поля ревьюеров (P1_peer, P2_peer, Manager_scorer, Self_scorer)"
         }, 
         { status: 404 }
       );
     }
 
-    console.log(`[${requestId}] ✅ Found ${reviewers.length} reviewers`);
+    console.log(`[STEP 2] Found ${reviewers.length} reviewers`);
 
-    // 8. Генерация токенов и ссылок
-    console.log(`[${requestId}] Step 8: Generating tokens and links`);
-    const tokenStartTime = Date.now();
+    // Генерация токенов и ссылок
+    console.log('[STEP 3] Generating tokens and links...');
     const exp = Math.floor(Date.now() / 1000) + expDays * 24 * 3600;
     const links = [];
     const errors = [];
 
-    for (const [index, reviewer] of reviewers.entries()) {
+    PerformanceTracker.start('generate-tokens');
+    
+    for (const reviewer of reviewers) {
       try {
-        console.log(`[${requestId}] Generating token ${index + 1}/${reviewers.length} for: ${reviewer.name}`);
-        
         const tokenPayload = { 
           reviewerUserId: reviewer.reviewerUserId, 
           role: reviewer.role || 'peer',
@@ -245,6 +156,7 @@ export async function POST(req) {
           exp 
         };
         
+        console.log(`[TOKEN] Generating for reviewer: ${reviewer.name} (${reviewer.reviewerUserId})`);
         const token = await signReviewToken(tokenPayload);
         
         links.push({ 
@@ -255,34 +167,36 @@ export async function POST(req) {
         });
         
       } catch (error) {
-        const errorMsg = `${reviewer.name}: ${error.message}`;
-        console.error(`[${requestId}] Token generation failed for ${reviewer.name}:`, error.message);
-        errors.push(errorMsg);
+        console.error(`[TOKEN] Failed to generate token for reviewer ${reviewer.name}:`, error);
+        errors.push(`${reviewer.name}: ${error.message}`);
       }
     }
     
-    const tokenTime = Date.now() - tokenStartTime;
-    console.log(`[${requestId}] Token generation completed in ${tokenTime}ms`);
+    PerformanceTracker.end('generate-tokens');
     
     if (!links.length) {
-      console.error(`[${requestId}] Failed to generate any links`);
+      console.error('[STEP 3] Failed to generate any links');
       return NextResponse.json(
         { 
           error: "Не удалось сгенерировать ни одной ссылки",
-          details: errors.join("; "),
-          debug: {
-            reviewerCount: reviewers.length,
-            errors: errors
-          }
+          details: errors.join("; ")
         }, 
         { status: 500 }
       );
     }
 
-    const totalTime = Date.now() - startTime;
+    const duration = PerformanceTracker.end(operation);
     
-    // Успешный ответ с детальной статистикой
-    console.log(`[${requestId}] === SUCCESS === Total time: ${totalTime}ms`);
+    // Логирование успешной генерации
+    console.log('[SUCCESS] Review links generated successfully:', {
+      teamName,
+      employeeCount: employees.length,
+      reviewerCount: reviewers.length,
+      linkCount: links.length,
+      expDays,
+      duration,
+      errors: errors.length > 0 ? errors : undefined
+    });
 
     const response = {
       ok: true,
@@ -292,90 +206,78 @@ export async function POST(req) {
       stats: {
         employeeCount: employees.length,
         reviewerCount: reviewers.length,
-        linkCount: links.length,
+        generationTime: duration,
         expirationDays: expDays,
-        expiresAt: new Date(exp * 1000).toISOString(),
-        performance: {
-          totalTime,
-          employeeSearchTime: employeesTime,
-          reviewerSearchTime: reviewersTime,
-          tokenGenerationTime: tokenTime
-        }
+        expiresAt: new Date(exp * 1000).toISOString()
       }
     };
     
+    // Добавляем предупреждения если были ошибки
     if (errors.length > 0) {
       response.warnings = errors;
       response.message = `Сгенерировано ${links.length} ссылок из ${reviewers.length} ревьюеров. ${errors.length} ошибок.`;
     }
     
-    console.log(`[${requestId}] === REQUEST END ===`);
     return NextResponse.json(response);
     
   } catch (error) {
-    const totalTime = Date.now() - startTime;
+    PerformanceTracker.end(operation);
     
-    console.error(`[${requestId}] === CRITICAL ERROR === Time: ${totalTime}ms`);
-    console.error(`[${requestId}] Error details:`, {
-      name: error.name,
-      message: error.message,
+    console.error('[CRITICAL ERROR] POST /api/admin/sign:', {
+      error: error.message,
       stack: error.stack,
       body: { ...body, adminKey: body.adminKey ? '[REDACTED]' : undefined },
-      env: Object.keys(env).reduce((acc, key) => ({
-        ...acc,
-        [key]: env[key] ? '[SET]' : '[MISSING]'
-      }), {}),
       timestamp: new Date().toISOString()
     });
     
     // Детальная обработка известных ошибок
-    let errorResponse = { error: "Внутренняя ошибка сервера" };
-    let statusCode = 500;
-    
     if (error.message?.includes('Missing environment variables')) {
-      errorResponse = {
-        error: "Ошибка конфигурации сервера",
-        details: process.env.NODE_ENV === 'development' ? error.message : "Обратитесь к администратору"
-      };
-    } else if (error.message?.includes('Module import failed')) {
-      errorResponse = {
-        error: "Ошибка загрузки модулей сервера",
-        details: process.env.NODE_ENV === 'development' ? error.message : "Попробуйте позже"
-      };
-    } else if (error.message?.includes('Timeout')) {
-      errorResponse = {
-        error: "Превышено время ожидания",
-        details: "Операция заняла слишком много времени. Попробуйте с меньшей командой или позже."
-      };
-      statusCode = 408;
-    } else if (error.message?.includes('NOTION')) {
-      errorResponse = {
-        error: "Ошибка Notion API",
-        details: process.env.NODE_ENV === 'development' ? error.message : "Проверьте подключение к Notion"
-      };
-    } else if (error.status === 429) {
-      errorResponse = {
-        error: "Слишком много запросов к Notion API",
-        details: "Попробуйте через минуту"
-      };
-      statusCode = 429;
-    } else if (error.status === 401 || error.status === 403) {
-      errorResponse = {
-        error: "Ошибка доступа к Notion API",
-        details: "Проверьте токен и права доступа"
-      };
+      return NextResponse.json(
+        { 
+          error: "Ошибка конфигурации сервера",
+          details: process.env.NODE_ENV === 'development' ? error.message : "Обратитесь к администратору"
+        }, 
+        { status: 500 }
+      );
     }
     
-    // Добавляем отладочную информацию в development
-    if (process.env.NODE_ENV === 'development') {
-      errorResponse.debug = {
-        requestId,
-        totalTime,
-        errorName: error.name,
-        stack: error.stack?.split('\n').slice(0, 5)
-      };
+    if (error.message?.includes('NOTION_TOKEN')) {
+      return NextResponse.json(
+        { error: "Ошибка конфигурации Notion API. Обратитесь к администратору." }, 
+        { status: 500 }
+      );
     }
     
-    return NextResponse.json(errorResponse, { status: statusCode });
+    if (error.message?.includes('DATABASE_ID')) {
+      return NextResponse.json(
+        { error: "Ошибка конфигурации баз данных. Обратитесь к администратору." }, 
+        { status: 500 }
+      );
+    }
+    
+    if (error.status === 429) {
+      return NextResponse.json(
+        { error: "Слишком много запросов к Notion API. Попробуйте через минуту." }, 
+        { status: 429 }
+      );
+    }
+    
+    if (error.status === 401 || error.status === 403) {
+      return NextResponse.json(
+        { error: "Ошибка доступа к Notion API. Проверьте токен и права доступа." }, 
+        { status: 500 }
+      );
+    }
+    
+    // Общая ошибка
+    return NextResponse.json(
+      { 
+        error: process.env.NODE_ENV === 'development' 
+          ? `Внутренняя ошибка: ${error.message}` 
+          : "Внутренняя ошибка сервера. Попробуйте позже.",
+        ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+      }, 
+      { status: 500 }
+    );
   }
 }
