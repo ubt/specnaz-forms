@@ -1,11 +1,36 @@
 "use client";
-import { useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
-export default function ScoreRow({ item, onChange }) {
-  const [val, setVal] = useState(item.current ?? 0);
+const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
+
+function useDebouncedCallback(cb, delay=200) {
+  const t = useRef();
+  return (v) => {
+    clearTimeout(t.current);
+    t.current = setTimeout(() => cb(v), delay);
+  };
+}
+
+function ScoreRowInner({ item, onChange }) {
+  const [val, setVal] = useState(clamp(item.current ?? 0));
   const [comment, setComment] = useState(item.comment ?? "");
 
-  const wrap = { display: "grid", gridTemplateColumns: "1fr 180px 80px 1fr", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: "1px solid #eee" };
+  const debounced = useDebouncedCallback(onChange, 120);
+
+  useEffect(() => {
+    // notify parent on first mount to ensure defaults get captured
+    debounced({ value: val, comment });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const wrap = useMemo(() => ({
+    display: "grid",
+    gridTemplateColumns: "1fr 180px 90px 1fr",
+    alignItems: "center",
+    padding: "8px 0",
+    borderBottom: "1px solid #eee"
+  }), []);
+
   const num = { width: 70, padding: "6px 8px" };
   const input = { padding: "6px 8px" };
   const title = { fontWeight: 600, lineHeight: 1.2 };
@@ -14,22 +39,34 @@ export default function ScoreRow({ item, onChange }) {
   return (
     <div style={wrap}>
       <div>
-        <div style={title}>{item.skillName}</div>
-        {item.description ? <div style={desc}>{item.description}</div> : null}
+        <div style={title}>{item.name}</div>
+        {item.description && <div style={desc}>{item.description}</div>}
       </div>
-
       <input
-        type="range" min={0} max={5} step={1} value={val}
-        onChange={(e)=>{ const v=Number(e.target.value); setVal(v); onChange({ value:v, comment }); }}
+        type="range"
+        min={0}
+        max={5}
+        step={1}
+        value={val}
+        onChange={(e) => { const v = clamp(Number(e.target.value)); setVal(v); debounced({ value: v, comment }); }}
+        aria-label={`Оценка для ${item.name}`}
       />
       <input
-        type="number" min={0} max={5} value={val} style={num}
-        onChange={(e)=>{ const v=Number(e.target.value); setVal(v); onChange({ value:v, comment }); }}
+        type="number"
+        min={0}
+        max={5}
+        value={val}
+        style={num}
+        onChange={(e) => { const v = clamp(Number(e.target.value)); setVal(v); debounced({ value: v, comment }); }}
       />
       <input
-        placeholder="Комментарий (опц.)" value={comment} style={input}
-        onChange={(e)=>{ const c=e.target.value; setComment(c); onChange({ value:val, comment:c }); }}
+        placeholder="Комментарий (опц.)"
+        value={comment}
+        style={input}
+        onChange={(e) => { const c = e.target.value; setComment(c); debounced({ value: val, comment: c }); }}
       />
     </div>
   );
 }
+
+export default memo(ScoreRowInner);
