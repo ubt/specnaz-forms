@@ -1,20 +1,6 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { verifyReviewToken } from "@/lib/token";
-import { 
-  listEvaluateesForReviewerUser, 
-  fetchEmployeeSkillRowsForReviewerUser,
-  updateScore,
-  detectCommentProp,
-  ROLE_TO_FIELD,
-  PerformanceTracker 
-} from "@/lib/notion";
-import { SubmitPayload, ValidationUtils } from "@/lib/schema";
-
-export const runtime = "edge";
-
-import { NextResponse } from "next/server";
 
 // Безопасный импорт с обработкой ошибок
 async function safeImport(moduleName) {
@@ -389,26 +375,6 @@ export async function POST(req, { params }) {
       return NextResponse.json(
         { error: "Нет прав для обновления записей" }, 
         { status: 403 }
-      );
-    }
-    
-    if (error.status === 429) {
-      return NextResponse.json(
-        { error: "Слишком много запросов. Попробуйте через несколько секунд." }, 
-        { status: 429 }
-      );
-    }
-    
-    return NextResponse.json(
-      { 
-        error: process.env.NODE_ENV === 'development' 
-          ? `Ошибка обновления: ${error.message}` 
-          : "Ошибка сохранения данных"
-      }, 
-      { status: 500 }
-    );
-  }
-}
       );
     }
     
