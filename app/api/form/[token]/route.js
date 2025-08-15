@@ -131,7 +131,8 @@ export async function GET(req, { params }) {
     console.error('[FORM GET ERROR]', {
       error: error.message,
       stack: error.stack,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      token: token?.substring(0, 10) + '...'
     });
     
     // Специальная обработка известных ошибок
@@ -142,10 +143,30 @@ export async function GET(req, { params }) {
       );
     }
     
+    if (error.message?.includes('Missing environment variables')) {
+      return NextResponse.json(
+        { error: "Ошибка конфигурации сервера" }, 
+        { status: 500 }
+      );
+    }
+    
     if (error.status === 429) {
       return NextResponse.json(
         { error: "Слишком много запросов. Попробуйте через минуту." }, 
         { status: 429 }
+      );
+    }
+    
+    // Если это ReferenceError или TypeError - скорее всего ошибка в коде
+    if (error instanceof ReferenceError || error instanceof TypeError) {
+      console.error('[FORM GET] Code error detected:', error.message);
+      return NextResponse.json(
+        { 
+          error: process.env.NODE_ENV === 'development' 
+            ? `Ошибка кода: ${error.message}` 
+            : "Внутренняя ошибка сервера"
+        }, 
+        { status: 500 }
       );
     }
     
