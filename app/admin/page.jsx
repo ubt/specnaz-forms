@@ -47,7 +47,7 @@ export default function OptimizedAdmin() {
     
     if (!adminKey.trim()) {
       errors.adminKey = "Admin key обязателен";
-    } else if (adminKey.trim().length < 8) {
+    } else if (adminKey.trim().length < 4) {
       errors.adminKey = "Admin key слишком короткий";
     }
     
