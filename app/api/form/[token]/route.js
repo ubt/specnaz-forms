@@ -154,7 +154,7 @@ export async function POST(req, { params }) {
     }
 
     const { items, mode } = parsed.data;
-    const field = ROLE_TO_FIELD[role] || ROLE_TO_FIELD.peer;
+    const field = ROLE_TO_FIELD[role] || ROLE_TO_FIELD.p1_peer;
     
     console.log(`[POST] Updating ${items.length} items for role: ${role}, field: ${field}`);
     const startTime = Date.now();
