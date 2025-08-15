@@ -9,31 +9,63 @@ const ReqSchema = z.object({
   teamName: z.string().min(1).max(100),
   expDays: z.number().int().min(1).max(365).default(14),
   adminKey: z.string().optional(),
-  cycleId: z.string().optional(), // Для будущего фильтра по циклам
+  cycleId: z.string().optional(),
 });
 
 function t(s) { return (s || "").trim(); }
+
+// Проверка обязательных переменных окружения
+function validateEnvironment() {
+  const required = {
+    ADMIN_KEY: process.env.ADMIN_KEY,
+    JWT_SECRET: process.env.JWT_SECRET,
+    NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
+    NOTION_TOKEN: process.env.NOTION_TOKEN,
+    MATRIX_DB_ID: process.env.MATRIX_DB_ID,
+    EMPLOYEES_DB_ID: process.env.EMPLOYEES_DB_ID
+  };
+  
+  const missing = Object.entries(required)
+    .filter(([key, value]) => !value?.trim())
+    .map(([key]) => key);
+    
+  if (missing.length > 0) {
+    throw new Error(`Missing environment variables: ${missing.join(', ')}`);
+  }
+  
+  return required;
+}
 
 export async function POST(req) {
   const operation = 'generate-review-links';
   PerformanceTracker.start(operation);
   
+  let body = {};
+  
   try {
+    // Проверяем переменные окружения в первую очередь
+    console.log('[ENV CHECK] Validating environment variables...');
+    const env = validateEnvironment();
+    console.log('[ENV CHECK] All required environment variables are present');
+    
     // Парсинг заголовков и тела запроса
     const hdrKey = t(req.headers.get("x-admin-key"));
     
-    let body = {};
     try { 
       body = await req.json(); 
-    } catch {
+    } catch (parseError) {
+      console.error('[PARSE ERROR]', parseError.message);
       return NextResponse.json(
-        { error: "Некорректный JSON" }, 
+        { error: "Некорректный JSON в теле запроса" }, 
         { status: 400 }
       );
     }
     
+    console.log('[REQUEST] Parsing request body...', { teamName: body.teamName, expDays: body.expDays });
+    
     const parsed = ReqSchema.safeParse(body);
     if (!parsed.success) {
+      console.error('[VALIDATION ERROR]', parsed.error.issues);
       return NextResponse.json(
         { 
           error: "Некорректные параметры",
@@ -44,23 +76,16 @@ export async function POST(req) {
     }
     
     const { teamName, expDays, cycleId } = parsed.data;
+    console.log('[REQUEST] Validated parameters:', { teamName, expDays });
 
     // Проверка авторизации
     const provided = hdrKey || t(parsed.data.adminKey);
-    const required = t(process.env.ADMIN_KEY);
-    
-    if (!required) {
-      console.error('ADMIN_KEY not configured in environment');
-      return NextResponse.json(
-        { error: "Сервер не настроен. Обратитесь к администратору." }, 
-        { status: 500 }
-      );
-    }
+    const required = t(env.ADMIN_KEY);
     
     if (provided !== required) {
-      console.warn('Unauthorized admin access attempt:', {
-        ip: req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for'),
-        userAgent: req.headers.get('user-agent'),
+      console.warn('[AUTH] Unauthorized admin access attempt:', {
+        hasHeader: !!hdrKey,
+        hasBodyKey: !!parsed.data.adminKey,
         timestamp: new Date().toISOString()
       });
       
@@ -69,42 +94,40 @@ export async function POST(req) {
         { status: 403 }
       );
     }
-
-    // Проверка базового URL
-    const base = t(process.env.NEXT_PUBLIC_BASE_URL);
-    if (!base) {
-      console.error('NEXT_PUBLIC_BASE_URL not configured');
-      return NextResponse.json(
-        { error: "Базовый URL не настроен. Обратитесь к администратору." }, 
-        { status: 500 }
-      );
-    }
+    
+    console.log('[AUTH] Admin authorization successful');
 
     // Поиск сотрудников по команде
+    console.log('[STEP 1] Searching for employees in team:', teamName);
     PerformanceTracker.start('find-employees');
+    
     const employees = await findEmployeesByTeam(teamName);
     PerformanceTracker.end('find-employees');
     
     if (!employees?.length) {
+      console.warn('[STEP 1] No employees found for team:', teamName);
       return NextResponse.json(
         { 
           error: `Команда "${teamName}" не найдена или пуста`,
-          suggestion: "Проверьте правильность названия команды"
+          suggestion: "Проверьте правильность названия команды в базе данных Notion"
         }, 
         { status: 404 }
       );
     }
 
-    console.log(`Found ${employees.length} employees in team "${teamName}":`, 
-      employees.map(e => e.name).join(', ')
+    console.log(`[STEP 1] Found ${employees.length} employees:`, 
+      employees.map(e => `${e.name} (${e.userIds.length} userIds)`).join(', ')
     );
 
     // Получение списка ревьюеров
+    console.log('[STEP 2] Finding reviewers for employees...');
     PerformanceTracker.start('find-reviewers');
+    
     const reviewers = await listReviewersForEmployees(employees);
     PerformanceTracker.end('find-reviewers');
     
     if (!reviewers?.length) {
+      console.warn('[STEP 2] No reviewers found for team:', teamName);
       return NextResponse.json(
         { 
           error: `Не найдено ревьюеров для команды "${teamName}"`,
@@ -114,9 +137,10 @@ export async function POST(req) {
       );
     }
 
-    console.log(`Found ${reviewers.length} reviewers for team "${teamName}"`);
+    console.log(`[STEP 2] Found ${reviewers.length} reviewers`);
 
     // Генерация токенов и ссылок
+    console.log('[STEP 3] Generating tokens and links...');
     const exp = Math.floor(Date.now() / 1000) + expDays * 24 * 3600;
     const links = [];
     const errors = [];
@@ -127,22 +151,23 @@ export async function POST(req) {
       try {
         const tokenPayload = { 
           reviewerUserId: reviewer.reviewerUserId, 
-          role: reviewer.role,
-          teamName, // Добавляем для логирования
+          role: reviewer.role || 'peer',
+          teamName,
           exp 
         };
         
+        console.log(`[TOKEN] Generating for reviewer: ${reviewer.name} (${reviewer.reviewerUserId})`);
         const token = await signReviewToken(tokenPayload);
         
         links.push({ 
           name: reviewer.name, 
-          url: `${base}/form/${token}`,
+          url: `${env.NEXT_PUBLIC_BASE_URL}/form/${token}`,
           userId: reviewer.reviewerUserId,
-          role: reviewer.role
+          role: reviewer.role || 'peer'
         });
         
       } catch (error) {
-        console.error(`Failed to generate token for reviewer ${reviewer.name}:`, error);
+        console.error(`[TOKEN] Failed to generate token for reviewer ${reviewer.name}:`, error);
         errors.push(`${reviewer.name}: ${error.message}`);
       }
     }
@@ -150,6 +175,7 @@ export async function POST(req) {
     PerformanceTracker.end('generate-tokens');
     
     if (!links.length) {
+      console.error('[STEP 3] Failed to generate any links');
       return NextResponse.json(
         { 
           error: "Не удалось сгенерировать ни одной ссылки",
@@ -162,13 +188,12 @@ export async function POST(req) {
     const duration = PerformanceTracker.end(operation);
     
     // Логирование успешной генерации
-    console.log('Review links generated successfully:', {
+    console.log('[SUCCESS] Review links generated successfully:', {
       teamName,
       employeeCount: employees.length,
       reviewerCount: reviewers.length,
       linkCount: links.length,
       expDays,
-      expTimestamp: exp,
       duration,
       errors: errors.length > 0 ? errors : undefined
     });
@@ -198,16 +223,24 @@ export async function POST(req) {
   } catch (error) {
     PerformanceTracker.end(operation);
     
-    console.error('POST /api/admin/sign Error:', {
-      endpoint: '/api/admin/sign',
-      method: 'POST',
+    console.error('[CRITICAL ERROR] POST /api/admin/sign:', {
       error: error.message,
       stack: error.stack,
-      timestamp: new Date().toISOString(),
-      body: body // Безопасно логируем тело запроса (без паролей)
+      body: { ...body, adminKey: body.adminKey ? '[REDACTED]' : undefined },
+      timestamp: new Date().toISOString()
     });
     
-    // Специальная обработка известных ошибок
+    // Детальная обработка известных ошибок
+    if (error.message?.includes('Missing environment variables')) {
+      return NextResponse.json(
+        { 
+          error: "Ошибка конфигурации сервера",
+          details: process.env.NODE_ENV === 'development' ? error.message : "Обратитесь к администратору"
+        }, 
+        { status: 500 }
+      );
+    }
+    
     if (error.message?.includes('NOTION_TOKEN')) {
       return NextResponse.json(
         { error: "Ошибка конфигурации Notion API. Обратитесь к администратору." }, 
@@ -236,11 +269,13 @@ export async function POST(req) {
       );
     }
     
+    // Общая ошибка
     return NextResponse.json(
       { 
         error: process.env.NODE_ENV === 'development' 
-          ? error.message 
-          : "Внутренняя ошибка сервера. Попробуйте позже."
+          ? `Внутренняя ошибка: ${error.message}` 
+          : "Внутренняя ошибка сервера. Попробуйте позже.",
+        ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
       }, 
       { status: 500 }
     );
