@@ -2,7 +2,11 @@
   "name": "notion-review-cloudflare",
   "private": true,
   "scripts": {
-    "build": "next build"
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "pages:deploy": "npm run pages:build && wrangler pages publish .vercel/output/static"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",
@@ -14,5 +18,8 @@
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   }
 }
