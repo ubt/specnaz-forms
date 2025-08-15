@@ -22,14 +22,13 @@ function useOptimizedDebounce(callback, delay = 200, deps = []) {
 }
 
 // Мемоизированный компонент для одной строки оценки
-const ScoreRowOptimized = memo(({ item, onChange, index }) => {
+const ScoreRowOptimized = memo(({ item, onChange, index, hideComment = false }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
-  const [comment, setComment] = useState(() => item.comment ?? "");
   const [isDirty, setIsDirty] = useState(false);
   
   const debouncedChange = useOptimizedDebounce(
-    useCallback((newValue, newComment) => {
-      onChange({ value: newValue, comment: newComment });
+    useCallback((newValue) => {
+      onChange({ value: newValue });
       setIsDirty(false);
     }, [onChange]),
     150
@@ -39,42 +38,47 @@ const ScoreRowOptimized = memo(({ item, onChange, index }) => {
     const clampedVal = clamp(newVal);
     setVal(clampedVal);
     setIsDirty(true);
-    debouncedChange(clampedVal, comment);
-  }, [comment, debouncedChange]);
-  
-  const handleCommentChange = useCallback((newComment) => {
-    setComment(newComment);
-    setIsDirty(true);
-    debouncedChange(val, newComment);
-  }, [val, debouncedChange]);
+    debouncedChange(clampedVal);
+  }, [debouncedChange]);
   
   // Уведомляем родителя о начальных значениях
   useEffect(() => {
-    debouncedChange(val, comment);
+    debouncedChange(val);
   }, []); // Только при монтировании
   
   const styles = useMemo(() => ({
     container: {
       display: "grid",
-      gridTemplateColumns: "1fr 180px 90px 1fr",
+      gridTemplateColumns: hideComment ? "1fr 180px 90px" : "1fr 180px 90px 1fr",
       alignItems: "center",
       padding: "12px 8px",
       borderBottom: "1px solid #eee",
       backgroundColor: isDirty ? "#f8f9fa" : "transparent",
-      transition: "background-color 0.2s ease"
+      transition: "background-color 0.2s ease",
+      gap: "12px"
+    },
+    skillInfo: {
+      display: "flex",
+      flexDirection: "column",
+      minWidth: 0 // Важно для правильного wrapping текста
     },
     title: { 
       fontWeight: 600, 
       lineHeight: 1.3,
-      fontSize: "14px"
+      fontSize: "14px",
+      marginBottom: "4px"
     },
     description: { 
       color: "#666", 
       fontSize: "12px", 
-      marginTop: 4, 
+      lineHeight: 1.4,
       whiteSpace: "pre-wrap",
-      maxHeight: "60px",
-      overflow: "hidden"
+      wordWrap: "break-word",
+      overflow: "hidden",
+      display: "-webkit-box",
+      WebkitLineClamp: 3,
+      WebkitBoxOrient: "vertical",
+      minHeight: "auto"
     },
     numberInput: { 
       width: 70, 
@@ -83,24 +87,23 @@ const ScoreRowOptimized = memo(({ item, onChange, index }) => {
       borderRadius: "4px",
       fontSize: "14px"
     },
-    textInput: { 
-      padding: "6px 8px",
-      border: "1px solid #ddd",
-      borderRadius: "4px",
-      fontSize: "13px"
-    },
     slider: {
       width: "100%",
       margin: "0 8px"
     }
-  }), [isDirty]);
+  }), [isDirty, hideComment]);
   
   return (
     <div style={styles.container}>
-      <div>
+      <div style={styles.skillInfo}>
         <div style={styles.title}>{item.name}</div>
         {item.description && (
-          <div style={styles.description}>{item.description}</div>
+          <div 
+            style={styles.description}
+            title={item.description} // Показываем полное описание в tooltip
+          >
+            {item.description}
+          </div>
         )}
       </div>
       
@@ -123,15 +126,6 @@ const ScoreRowOptimized = memo(({ item, onChange, index }) => {
         style={styles.numberInput}
         onChange={(e) => handleValueChange(Number(e.target.value))}
         aria-label={`Числовая оценка для ${item.name}`}
-      />
-      
-      <input
-        placeholder="Комментарий (опционально)"
-        value={comment}
-        style={styles.textInput}
-        onChange={(e) => handleCommentChange(e.target.value)}
-        maxLength={2000}
-        aria-label={`Комментарий для ${item.name}`}
       />
     </div>
   );
