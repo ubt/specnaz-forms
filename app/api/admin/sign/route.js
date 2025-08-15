@@ -101,8 +101,37 @@ export async function POST(req) {
     console.log('[STEP 1] Searching for employees in team:', teamName);
     PerformanceTracker.start('find-employees');
     
-    const employees = await findEmployeesByTeam(teamName);
-    PerformanceTracker.end('find-employees');
+    let employees;
+    try {
+      employees = await findEmployeesByTeam(teamName);
+      PerformanceTracker.end('find-employees');
+    } catch (error) {
+      PerformanceTracker.end('find-employees');
+      console.error('[STEP 1] Error finding employees:', error);
+      
+      // Более детальная обработка ошибок поиска команды
+      if (error.message.includes('Team property')) {
+        return NextResponse.json(
+          { 
+            error: `Не найдено поле "Команда" в базе данных сотрудников`,
+            suggestion: "Проверьте настройки базы данных Notion"
+          }, 
+          { status: 500 }
+        );
+      }
+      
+      if (error.message.includes('Missing environment variables')) {
+        return NextResponse.json(
+          { 
+            error: "Ошибка конфигурации базы данных",
+            suggestion: "Проверьте переменные окружения EMPLOYEES_DB_ID и NOTION_TOKEN"
+          }, 
+          { status: 500 }
+        );
+      }
+      
+      throw error; // Перебрасываем неизвестные ошибки в общий обработчик
+    }
     
     if (!employees?.length) {
       console.warn('[STEP 1] No employees found for team:', teamName);
@@ -123,8 +152,26 @@ export async function POST(req) {
     console.log('[STEP 2] Finding reviewers for employees...');
     PerformanceTracker.start('find-reviewers');
     
-    const reviewers = await listReviewersForEmployees(employees);
-    PerformanceTracker.end('find-reviewers');
+    let reviewers;
+    try {
+      reviewers = await listReviewersForEmployees(employees);
+      PerformanceTracker.end('find-reviewers');
+    } catch (error) {
+      PerformanceTracker.end('find-reviewers');
+      console.error('[STEP 2] Error finding reviewers:', error);
+      
+      if (error.message.includes('Employee property')) {
+        return NextResponse.json(
+          { 
+            error: `Не найдено поле "Сотрудник" в матрице оценок`,
+            suggestion: "Проверьте настройки базы данных матрицы компетенций"
+          }, 
+          { status: 500 }
+        );
+      }
+      
+      throw error;
+    }
     
     if (!reviewers?.length) {
       console.warn('[STEP 2] No reviewers found for team:', teamName);
