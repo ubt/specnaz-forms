@@ -13,8 +13,20 @@ export default function FormPage({ params }) {
   const token = params.token;
 
   // Состояние черновика с оптимизацией
-  const [draft, setDraft] = useState({}); // pageId -> { value, comment }
+  const [draft, setDraft] = useState({}); // pageId -> { value }
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Маппинг ролей для отображения
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      'self': 'Самооценка',
+      'p1_peer': 'Peer',
+      'p2_peer': 'Peer',
+      'manager': 'Менеджер',
+      'peer': 'Peer'
+    };
+    return roleMap[role] || 'Peer';
+  };
 
   // Загрузка данных с улучшенной обработкой ошибок
   useEffect(() => {
@@ -96,10 +108,10 @@ export default function FormPage({ params }) {
     };
   }, [token]);
 
-  // Оптимизированный обработчик изменений
+  // Оптимизированный обработчик изменений (убрали comment)
   const onRowChange = useCallback((pageId) => (newData) => {
     setDraft(prev => {
-      const updated = { ...prev, [pageId]: newData };
+      const updated = { ...prev, [pageId]: { value: newData.value } };
       setHasUnsavedChanges(true);
       return updated;
     });
@@ -129,12 +141,10 @@ export default function FormPage({ params }) {
   const progressStats = useMemo(() => {
     const total = rows.length;
     const filled = Object.keys(draft).length;
-    const withComments = Object.values(draft).filter(d => d.comment?.trim()).length;
     
     return {
       total,
       filled,
-      withComments,
       percentage: total > 0 ? Math.round((filled / total) * 100) : 0
     };
   }, [rows.length, draft]);
@@ -158,7 +168,8 @@ export default function FormPage({ params }) {
     
     const items = Object.entries(draft).map(([pageId, data]) => ({ 
       pageId, 
-      ...data 
+      value: data.value,
+      comment: "" // Убираем комментарии из отправки
     }));
     
     if (!items.length) { 
@@ -335,9 +346,6 @@ export default function FormPage({ params }) {
             <span>📊 Сотрудников: <strong>{stats.totalEmployees}</strong></span>
             <span>🎯 Навыков: <strong>{stats.totalSkills}</strong></span>
             <span>✅ Заполнено: <strong>{progressStats.filled}/{progressStats.total}</strong> ({progressStats.percentage}%)</span>
-            {progressStats.withComments > 0 && (
-              <span>💬 С комментариями: <strong>{progressStats.withComments}</strong></span>
-            )}
           </div>
         )}
         
@@ -370,6 +378,18 @@ export default function FormPage({ params }) {
                 }}>
                   ({group.skills.length} навыков)
                 </span>
+                <span style={{
+                  fontSize: 14,
+                  color: '#007bff',
+                  fontWeight: 600,
+                  marginLeft: 8,
+                  padding: '2px 8px',
+                  background: '#e7f3ff',
+                  borderRadius: 4,
+                  border: '1px solid #b8daff'
+                }}>
+                  {getRoleDisplayName(group.role)}
+                </span>
               </h2>
               
               <div style={{ display: "grid", gap: 8 }}>
@@ -379,6 +399,7 @@ export default function FormPage({ params }) {
                     item={row} 
                     onChange={onRowChange(row.pageId)}
                     initialValue={draft[row.pageId]}
+                    hideComment={true}
                   />
                 ))}
               </div>
