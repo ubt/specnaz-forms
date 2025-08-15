@@ -194,20 +194,29 @@ export async function POST(req, { params }) {
     
     console.log(`[FORM POST] Processing submission from reviewer: ${reviewerUserId}, items: ${body.items?.length || 0}`);
     
-    // Валидация данных
-    const validation = ValidationUtils.safeValidate(SubmitPayload, body);
-    if (!validation.success) {
-      console.error('[FORM POST] Validation failed:', validation.errors);
+    console.log(`[FORM POST] Received body:`, { itemsCount: body.items?.length, mode: body.mode });
+    
+    // Простая валидация без комментариев
+    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
-        { 
-          error: "Некорректные данные",
-          details: validation.errors.map(e => `${e.field}: ${e.message}`).join(", ")
-        }, 
+        { error: "Необходимо предоставить массив элементов для обновления" }, 
         { status: 400 }
       );
     }
     
-    const { items, mode } = validation.data;
+    // Валидируем каждый элемент
+    for (const [index, item] of body.items.entries()) {
+      if (!item.pageId || typeof item.value !== 'number' || item.value < 0 || item.value > 5) {
+        return NextResponse.json(
+          { 
+            error: `Некорректный элемент ${index + 1}: требуется pageId и value от 0 до 5`
+          }, 
+          { status: 400 }
+        );
+      }
+    }
+    
+    const { items, mode } = { items: body.items, mode: body.mode || "final" };
     
     // Определение поля для обновления и комментариев
     const scoreField = ROLE_TO_FIELD[role] || ROLE_TO_FIELD.peer;
@@ -228,8 +237,8 @@ export async function POST(req, { params }) {
           item.pageId, 
           scoreField, 
           item.value, 
-          item.comment,
-          commentProp
+          "", // Убираем комментарии
+          null // Не обновляем поле комментариев
         );
         
         results.push({ pageId: item.pageId, success: true });
