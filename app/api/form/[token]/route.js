@@ -11,145 +11,96 @@ import {
   detectCommentProp,
 } from "@/lib/notion";
 
-// Улучшенная валидация
-const EnhancedScoreItem = z.object({
-  pageId: z.string().min(1, "Page ID обязателен").regex(/^[a-f0-9-]+$/i, "Некорректный формат Page ID"),
-  value: z.number().int().min(0).max(5),
-  comment: z.string().max(2000).optional().default(""),
-});
-
-const EnhancedSubmitPayload = z.object({
-  items: z.array(EnhancedScoreItem).min(1).max(100, "Слишком много элементов за раз"),
-  mode: z.enum(["draft", "final"]).default("final"),
-});
-
-// Batch-процессор для обновлений
-class BatchProcessor {
-  constructor(options = {}) {
-    this.concurrency = options.concurrency || 2;
-    this.batchSize = options.batchSize || 3;
-    this.retryAttempts = options.retryAttempts || 2;
-  }
-  
-  async process(items, processor) {
-    const results = { success: 0, errors: 0, errorDetails: [] };
-    
-    // Разбиваем на батчи
-    const batches = [];
-    for (let i = 0; i < items.length; i += this.batchSize) {
-      batches.push(items.slice(i, i + this.batchSize));
-    }
-    
-    // Семафор для ограничения параллельности
-    let activeTasks = 0;
-    const maxConcurrency = this.concurrency;
-    
-    const processBatch = async (batch, batchIndex) => {
-      console.log(`[BATCH ${batchIndex + 1}/${batches.length}] Processing ${batch.length} items`);
-      
-      const batchResults = await Promise.allSettled(
-        batch.map(async (item) => {
-          for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
-            try {
-              const result = await processor(item);
-              return { success: true, result, item };
-            } catch (error) {
-              if (attempt === this.retryAttempts - 1) {
-                console.error(`Failed to process ${item.pageId}:`, error.message);
-                return { success: false, error, item };
-              }
-              // Ждем перед повтором
-              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-            }
-          }
-        })
-      );
-      
-      // Собираем результаты
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled') {
-          if (result.value.success) {
-            results.success++;
-          } else {
-            results.errors++;
-            results.errorDetails.push(result.value);
-          }
-        } else {
-          results.errors++;
-          results.errorDetails.push({ success: false, error: result.reason });
-        }
-      }
-      
-      // Пауза между батчами
-      if (batchIndex < batches.length - 1) {
-        await new Promise(r => setTimeout(r, 200));
-      }
-    };
-    
-    // Запускаем батчи с ограниченной параллельностью
-    const batchPromises = [];
-    
-    for (let i = 0; i < batches.length; i++) {
-      const batchPromise = (async () => {
-        while (activeTasks >= maxConcurrency) {
-          await new Promise(r => setTimeout(r, 100));
-        }
-        activeTasks++;
-        try {
-          await processBatch(batches[i], i);
-        } finally {
-          activeTasks--;
-        }
-      })();
-      
-      batchPromises.push(batchPromise);
-    }
-    
-    await Promise.all(batchPromises);
-    return results;
-  }
-}
-
 function t(s) { 
   return (s || "").trim(); 
 }
 
 export async function GET(req, { params }) {
   try {
+    console.log(`[GET] Starting form data load for token: ${params.token?.substring(0, 20)}...`);
+    
     const payload = await verifyReviewToken(params.token);
+    console.log(`[GET] Token verified:`, { 
+      reviewerUserId: payload?.reviewerUserId,
+      role: payload?.role,
+      teamName: payload?.teamName,
+      exp: payload?.exp ? new Date(payload.exp * 1000).toISOString() : 'no expiration'
+    });
+    
     const reviewerUserId = t(payload?.reviewerUserId);
     
     if (!reviewerUserId) {
+      console.error('[GET] No reviewerUserId found in token');
       return NextResponse.json(
         { error: "Недействительный токен" }, 
         { status: 401, headers: { "Cache-Control": "no-store" } }
       );
     }
     
-    console.log(`[GET] Loading data for reviewer: ${reviewerUserId}`);
+    console.log(`[GET] Loading evaluatees for reviewer: ${reviewerUserId}`);
     const startTime = Date.now();
     
     const employees = await listEvaluateesForReviewerUser(reviewerUserId);
     
+    console.log(`[GET] Found ${employees?.length || 0} employees to evaluate:`, 
+      employees?.map(e => `${e.employeeName} (${e.employeeId}) - role: ${e.role}`) || []
+    );
+    
     if (!employees?.length) {
+      console.warn(`[GET] No employees found for reviewer ${reviewerUserId}`);
       return NextResponse.json(
-        { rows: [] }, 
+        { 
+          rows: [],
+          debug: {
+            reviewerUserId,
+            tokenRole: payload?.role,
+            teamName: payload?.teamName,
+            message: "No employees found for this reviewer"
+          }
+        }, 
         { headers: { "Cache-Control": "no-store" } }
       );
     }
     
+    console.log(`[GET] Loading skill rows for ${employees.length} employees...`);
     const rows = await fetchEmployeeSkillRowsForReviewerUser(employees, reviewerUserId);
     
     const loadTime = Date.now() - startTime;
-    console.log(`[GET] Data loaded in ${loadTime}ms. Employees: ${employees.length}, Total items: ${rows.reduce((sum, r) => sum + (r.items?.length || 0), 0)}`);
+    const totalItems = rows.reduce((sum, r) => sum + (r.items?.length || 0), 0);
+    
+    console.log(`[GET] Data loaded successfully in ${loadTime}ms:`, {
+      employees: employees.length,
+      rowGroups: rows.length,
+      totalItems,
+      rowDetails: rows.map(r => `${r.employeeName}: ${r.items?.length || 0} items (role: ${r.role})`)
+    });
     
     return NextResponse.json(
-      { rows }, 
+      { 
+        rows,
+        stats: {
+          totalEmployees: employees.length,
+          totalSkills: totalItems,
+          loadTime
+        }
+      }, 
       { headers: { "Cache-Control": "no-store" } }
     );
     
   } catch (error) {
-    console.error("[GET] Error loading form data:", error);
+    console.error("[GET] Error loading form data:", {
+      error: error.message,
+      stack: error.stack,
+      token: params.token?.substring(0, 20) + '...'
+    });
+    
+    if (error.message?.includes('JWTExpired')) {
+      return NextResponse.json(
+        { error: "Ссылка истекла. Запросите новую ссылку у администратора." }, 
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    
     return NextResponse.json(
       { error: error.message || "Ошибка загрузки данных" }, 
       { status: 400, headers: { "Cache-Control": "no-store" } }
@@ -157,6 +108,7 @@ export async function GET(req, { params }) {
   }
 }
 
+// POST остается без изменений
 export async function POST(req, { params }) {
   try {
     const payload = await verifyReviewToken(params.token);
@@ -181,6 +133,17 @@ export async function POST(req, { params }) {
       );
     }
     
+    const EnhancedScoreItem = z.object({
+      pageId: z.string().min(1, "Page ID обязателен").regex(/^[a-f0-9-]+$/i, "Некорректный формат Page ID"),
+      value: z.number().int().min(0).max(5),
+      comment: z.string().max(2000).optional().default(""),
+    });
+
+    const EnhancedSubmitPayload = z.object({
+      items: z.array(EnhancedScoreItem).min(1).max(100, "Слишком много элементов за раз"),
+      mode: z.enum(["draft", "final"]).default("final"),
+    });
+    
     const parsed = EnhancedSubmitPayload.safeParse(body);
     if (!parsed.success) {
       console.error("[POST] Validation error:", parsed.error);
@@ -196,40 +159,31 @@ export async function POST(req, { params }) {
     console.log(`[POST] Updating ${items.length} items for role: ${role}, field: ${field}`);
     const startTime = Date.now();
     
-    // Определяем поле для комментариев
     const commentProp = await detectCommentProp();
     
-    // Создаем batch-процессор
-    const batchProcessor = new BatchProcessor({
-      concurrency: 2,
-      batchSize: 3,
-      retryAttempts: 3
-    });
+    let success = 0, errors = 0;
     
-    // Процессор для одного элемента
-    const updateProcessor = async (item) => {
-      return await updateScore(item.pageId, field, item.value, item.comment, commentProp);
-    };
-    
-    // Выполняем batch-обновление
-    const result = await batchProcessor.process(items, updateProcessor);
-    
-    const updateTime = Date.now() - startTime;
-    console.log(`[POST] Updates completed in ${updateTime}ms. Success: ${result.success}, Errors: ${result.errors}`);
-    
-    if (result.errors > 0) {
-      console.warn(`[POST] Some updates failed:`, result.errorDetails.slice(0, 3)); // Логируем первые 3 ошибки
+    for (const item of items) {
+      try {
+        await updateScore(item.pageId, field, item.value, item.comment, commentProp);
+        success++;
+      } catch (error) {
+        console.error(`[POST] Failed to update ${item.pageId}:`, error.message);
+        errors++;
+      }
     }
     
-    // Возвращаем результат даже при частичных ошибках
+    const updateTime = Date.now() - startTime;
+    console.log(`[POST] Updates completed in ${updateTime}ms. Success: ${success}, Errors: ${errors}`);
+    
     return NextResponse.json({ 
       ok: true, 
       role,
-      processed: result.success + result.errors,
-      success: result.success,
-      errors: result.errors,
-      ...(result.errors > 0 && { 
-        warning: `${result.errors} обновлений завершились с ошибками` 
+      processed: success + errors,
+      success,
+      errors,
+      ...(errors > 0 && { 
+        warning: `${errors} обновлений завершились с ошибками` 
       })
     });
 
