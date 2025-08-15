@@ -1,110 +1,39 @@
-// app/api/debug/route.js
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { notion, MATRIX_DB_ID, EMPLOYEES_DB_ID } from "@/lib/notion";
 
-export async function GET(request) {
+export async function GET() {
   try {
-    console.log('[DEBUG] Starting debug checks...');
-    
-    const results = {
-      timestamp: new Date().toISOString(),
-      environment: {
-        hasNotionToken: !!process.env.NOTION_TOKEN,
-        hasMatrixDbId: !!process.env.MATRIX_DB_ID,
-        hasEmployeesDbId: !!process.env.EMPLOYEES_DB_ID,
-        matrixDbId: process.env.MATRIX_DB_ID?.substring(0, 8) + '...',
-        employeesDbId: process.env.EMPLOYEES_DB_ID?.substring(0, 8) + '...',
-      },
-      tests: {}
+    const checks = {
+      hasAdminKey: !!(process.env.ADMIN_KEY && String(process.env.ADMIN_KEY).trim()),
+      hasJwtSecret: !!(process.env.JWT_SECRET && String(process.env.JWT_SECRET).trim()),
+      hasNotionToken: !!(process.env.NOTION_TOKEN && String(process.env.NOTION_TOKEN).trim()),
+      hasMatrixDbId: !!(process.env.MATRIX_DB_ID && String(process.env.MATRIX_DB_ID).trim()),
+      hasEmployeesDbId: !!(process.env.EMPLOYEES_DB_ID && String(process.env.EMPLOYEES_DB_ID).trim()),
+      baseUrlSet: !!(process.env.NEXT_PUBLIC_BASE_URL && String(process.env.NEXT_PUBLIC_BASE_URL).trim()),
     };
     
-    // Тест 1: Проверка подключения к Notion API
-    try {
-      console.log('[DEBUG] Testing Notion API connection...');
-      const user = await notion.users.me();
-      results.tests.notionConnection = {
-        success: true,
-        user: user.name || user.id
-      };
-    } catch (error) {
-      results.tests.notionConnection = {
-        success: false,
-        error: error.message,
-        status: error.status
-      };
-    }
+    const allGood = Object.values(checks).every(Boolean);
     
-    // Тест 2: Проверка доступа к базе сотрудников
-    try {
-      console.log('[DEBUG] Testing employees database access...');
-      const db = await notion.databases.retrieve({ 
-        database_id: EMPLOYEES_DB_ID 
-      });
-      results.tests.employeesDatabase = {
-        success: true,
-        title: db.title?.[0]?.plain_text || 'No title',
-        properties: Object.keys(db.properties || {})
-      };
-    } catch (error) {
-      results.tests.employeesDatabase = {
-        success: false,
-        error: error.message,
-        status: error.status
-      };
-    }
+    // Дополнительные проверки
+    const envInfo = {
+      nodeEnv: process.env.NODE_ENV,
+      runtime: 'edge',
+      timestamp: new Date().toISOString()
+    };
     
-    // Тест 3: Проверка доступа к базе матрицы
-    try {
-      console.log('[DEBUG] Testing matrix database access...');
-      const db = await notion.databases.retrieve({ 
-        database_id: MATRIX_DB_ID 
-      });
-      results.tests.matrixDatabase = {
-        success: true,
-        title: db.title?.[0]?.plain_text || 'No title',
-        properties: Object.keys(db.properties || {})
-      };
-    } catch (error) {
-      results.tests.matrixDatabase = {
-        success: false,
-        error: error.message,
-        status: error.status
-      };
-    }
-    
-    // Тест 4: Проверка поиска команды (если указана в query)
-    const url = new URL(request.url);
-    const teamName = url.searchParams.get('team');
-    if (teamName) {
-      try {
-        console.log(`[DEBUG] Testing team search for: ${teamName}`);
-        const { findEmployeesByTeam } = await import('@/lib/notion');
-        const employees = await findEmployeesByTeam(teamName);
-        results.tests.teamSearch = {
-          success: true,
-          teamName,
-          employeeCount: employees.length,
-          employees: employees.map(e => ({ name: e.name, userCount: e.userIds.length }))
-        };
-      } catch (error) {
-        results.tests.teamSearch = {
-          success: false,
-          teamName,
-          error: error.message
-        };
-      }
-    }
-    
-    return NextResponse.json(results);
+    return NextResponse.json({ 
+      ...checks, 
+      allConfigured: allGood,
+      environment: envInfo,
+      status: allGood ? 'healthy' : 'misconfigured'
+    });
     
   } catch (error) {
-    console.error('[DEBUG] Critical error:', error);
-    return NextResponse.json({
-      error: 'Debug endpoint failed',
-      message: error.message,
-      stack: error.stack
+    console.error('[HEALTH CHECK ERROR]', error);
+    return NextResponse.json({ 
+      error: 'Health check failed',
+      details: error.message 
     }, { status: 500 });
   }
 }
