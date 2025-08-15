@@ -25,6 +25,7 @@ function useOptimizedDebounce(callback, delay = 200, deps = []) {
 const ScoreRowOptimized = memo(({ item, onChange, index, hideComment = false }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
   const [isDirty, setIsDirty] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   
   const debouncedChange = useOptimizedDebounce(
     useCallback((newValue) => {
@@ -46,87 +47,142 @@ const ScoreRowOptimized = memo(({ item, onChange, index, hideComment = false }) 
     debouncedChange(val);
   }, []); // Только при монтировании
   
+  // Проверяем, нужна ли кнопка "показать больше"
+  const needsExpansion = item.description && item.description.length > 150;
+  
   const styles = useMemo(() => ({
     container: {
       display: "grid",
-      gridTemplateColumns: hideComment ? "1fr 180px 90px" : "1fr 180px 90px 1fr",
-      alignItems: "center",
-      padding: "12px 8px",
+      gridTemplateColumns: hideComment ? "2fr 140px 80px" : "2fr 140px 80px 1fr",
+      alignItems: "start", // Изменили на start для лучшего выравнивания
+      padding: "16px 8px", // Увеличили padding
       borderBottom: "1px solid #eee",
       backgroundColor: isDirty ? "#f8f9fa" : "transparent",
       transition: "background-color 0.2s ease",
-      gap: "12px"
+      gap: "16px", // Увеличили gap
+      minHeight: "60px" // Минимальная высота для комфорта
     },
     skillInfo: {
       display: "flex",
       flexDirection: "column",
-      minWidth: 0 // Важно для правильного wrapping текста
+      minWidth: 0, // Важно для правильного wrapping текста
+      maxWidth: "100%" // Обеспечиваем использование всего доступного пространства
     },
     title: { 
       fontWeight: 600, 
       lineHeight: 1.3,
-      fontSize: "14px",
-      marginBottom: "4px"
+      fontSize: "15px", // Чуть увеличили шрифт
+      marginBottom: "8px",
+      color: "#2c3e50"
     },
     description: { 
       color: "#666", 
-      fontSize: "12px", 
-      lineHeight: 1.4,
+      fontSize: "13px", 
+      lineHeight: 1.5, // Улучшили межстрочный интервал
       whiteSpace: "pre-wrap",
       wordWrap: "break-word",
+      wordBreak: "break-word", // Добавили для длинных слов
       overflow: "hidden",
+      maxWidth: "100%"
+    },
+    descriptionCollapsed: {
       display: "-webkit-box",
       WebkitLineClamp: 3,
       WebkitBoxOrient: "vertical",
-      minHeight: "auto"
+    },
+    descriptionExpanded: {
+      display: "block"
+    },
+    expandButton: {
+      background: "none",
+      border: "none",
+      color: "#007bff",
+      cursor: "pointer",
+      fontSize: "12px",
+      marginTop: "4px",
+      padding: "2px 0",
+      textDecoration: "underline",
+      alignSelf: "flex-start"
+    },
+    controlsContainer: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "8px",
+      paddingTop: "4px" // Небольшой отступ сверху для выравнивания
     },
     numberInput: { 
       width: 70, 
-      padding: "6px 8px",
+      padding: "8px 10px", // Увеличили padding
       border: "1px solid #ddd",
-      borderRadius: "4px",
-      fontSize: "14px"
+      borderRadius: "6px", // Скругли углы
+      fontSize: "14px",
+      textAlign: "center",
+      fontWeight: "600"
     },
     slider: {
-      width: "100%",
-      margin: "0 8px"
+      width: "120px", // Увеличили ширину слайдера
+      height: "6px", // Увеличили высоту
+      margin: "8px 0",
+      background: "#e9ecef",
+      borderRadius: "3px",
+      outline: "none",
+      cursor: "pointer"
     }
-  }), [isDirty, hideComment]);
+  }), [isDirty, hideComment, isDescriptionExpanded]);
   
   return (
     <div style={styles.container}>
       <div style={styles.skillInfo}>
         <div style={styles.title}>{item.name}</div>
         {item.description && (
-          <div 
-            style={styles.description}
-            title={item.description} // Показываем полное описание в tooltip
-          >
-            {item.description}
+          <div>
+            <div 
+              style={{
+                ...styles.description,
+                ...(needsExpansion && !isDescriptionExpanded 
+                  ? styles.descriptionCollapsed 
+                  : styles.descriptionExpanded)
+              }}
+              title={item.description} // Показываем полное описание в tooltip
+            >
+              {item.description}
+            </div>
+            {needsExpansion && (
+              <button
+                style={styles.expandButton}
+                onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                type="button"
+              >
+                {isDescriptionExpanded ? "↑ Свернуть" : "↓ Показать полностью"}
+              </button>
+            )}
           </div>
         )}
       </div>
       
-      <input
-        type="range"
-        min={0}
-        max={5}
-        step={1}
-        value={val}
-        style={styles.slider}
-        onChange={(e) => handleValueChange(Number(e.target.value))}
-        aria-label={`Оценка для ${item.name}`}
-      />
-      
-      <input
-        type="number"
-        min={0}
-        max={5}
-        value={val}
-        style={styles.numberInput}
-        onChange={(e) => handleValueChange(Number(e.target.value))}
-        aria-label={`Числовая оценка для ${item.name}`}
-      />
+      <div style={styles.controlsContainer}>
+        <input
+          type="range"
+          min={0}
+          max={5}
+          step={1}
+          value={val}
+          style={styles.slider}
+          onChange={(e) => handleValueChange(Number(e.target.value))}
+          aria-label={`Оценка для ${item.name}`}
+        />
+        
+        <input
+          type="number"
+          min={0}
+          max={5}
+          value={val}
+          style={styles.numberInput}
+          onChange={(e) => handleValueChange(Number(e.target.value))}
+          aria-label={`Числовая оценка для ${item.name}`}
+        />
+      </div>
     </div>
   );
 });
@@ -138,7 +194,7 @@ const VirtualizedScoreList = memo(({ items, onChange, containerHeight = 600 }) =
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef();
   
-  const ITEM_HEIGHT = 80; // Примерная высота одного элемента
+  const ITEM_HEIGHT = 100; // Увеличили высоту элемента
   const BUFFER_SIZE = 5; // Количество элементов для предварительной загрузки
   
   const visibleRange = useMemo(() => {
