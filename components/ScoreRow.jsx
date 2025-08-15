@@ -1,304 +1,229 @@
 "use client";
-import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
 
-function useDebouncedCallback(callback, delay = 200) {
+// Оптимизированный debounce hook
+function useOptimizedDebounce(callback, delay = 200, deps = []) {
   const timeoutRef = useRef();
+  const callbackRef = useRef(callback);
   
-  return useCallback((value) => {
+  // Обновляем callback без сброса таймера
+  useEffect(() => {
+    callbackRef.current = callback;
+  });
+  
+  return useCallback((...args) => {
     clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => callback(value), delay);
-  }, [callback, delay]);
+    timeoutRef.current = setTimeout(() => {
+      callbackRef.current(...args);
+    }, delay);
+  }, [delay, ...deps]);
 }
 
-function ScoreRowInner({ item, onChange, initialValue }) {
-  // Инициализируем состояние из переданных данных или текущих значений
-  const [val, setVal] = useState(() => {
-    if (initialValue?.value !== undefined) return clamp(initialValue.value);
-    return clamp(item.current ?? 0);
-  });
+// Мемоизированный компонент для одной строки оценки
+const ScoreRowOptimized = memo(({ item, onChange, index }) => {
+  const [val, setVal] = useState(() => clamp(item.current ?? 0));
+  const [comment, setComment] = useState(() => item.comment ?? "");
+  const [isDirty, setIsDirty] = useState(false);
   
-  const [comment, setComment] = useState(() => {
-    if (initialValue?.comment !== undefined) return initialValue.comment;
-    return item.comment ?? "";
-  });
+  const debouncedChange = useOptimizedDebounce(
+    useCallback((newValue, newComment) => {
+      onChange({ value: newValue, comment: newComment });
+      setIsDirty(false);
+    }, [onChange]),
+    150
+  );
   
-  const [isModified, setIsModified] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-
-  const debounced = useDebouncedCallback(onChange, 150);
-
-  // Обновляем состояние при изменении item (например, при перезагрузке)
-  useEffect(() => {
-    if (!isModified && !initialValue) {
-      setVal(clamp(item.current ?? 0));
-      setComment(item.comment ?? "");
-    }
-  }, [item.current, item.comment, isModified, initialValue]);
-
-  // Уведомляем родителя об изменениях
-  const notifyChange = useCallback((newVal, newComment) => {
-    const data = { value: newVal, comment: newComment };
-    debounced(data);
-    setIsModified(true);
-  }, [debounced]);
-
-  // Обработчик изменения оценки
-  const handleValueChange = useCallback((newValue) => {
-    const clampedValue = clamp(newValue);
-    setVal(clampedValue);
-    notifyChange(clampedValue, comment);
-  }, [comment, notifyChange]);
-
-  // Обработчик изменения комментария
+  const handleValueChange = useCallback((newVal) => {
+    const clampedVal = clamp(newVal);
+    setVal(clampedVal);
+    setIsDirty(true);
+    debouncedChange(clampedVal, comment);
+  }, [comment, debouncedChange]);
+  
   const handleCommentChange = useCallback((newComment) => {
     setComment(newComment);
-    notifyChange(val, newComment);
-  }, [val, notifyChange]);
-
-  // Уведомляем об initial state при первом рендере
+    setIsDirty(true);
+    debouncedChange(val, newComment);
+  }, [val, debouncedChange]);
+  
+  // Уведомляем родителя о начальных значениях
   useEffect(() => {
-    if (!isModified) {
-      debounced({ value: val, comment });
+    debouncedChange(val, comment);
+  }, []); // Только при монтировании
+  
+  const styles = useMemo(() => ({
+    container: {
+      display: "grid",
+      gridTemplateColumns: "1fr 180px 90px 1fr",
+      alignItems: "center",
+      padding: "12px 8px",
+      borderBottom: "1px solid #eee",
+      backgroundColor: isDirty ? "#f8f9fa" : "transparent",
+      transition: "background-color 0.2s ease"
+    },
+    title: { 
+      fontWeight: 600, 
+      lineHeight: 1.3,
+      fontSize: "14px"
+    },
+    description: { 
+      color: "#666", 
+      fontSize: "12px", 
+      marginTop: 4, 
+      whiteSpace: "pre-wrap",
+      maxHeight: "60px",
+      overflow: "hidden"
+    },
+    numberInput: { 
+      width: 70, 
+      padding: "6px 8px",
+      border: "1px solid #ddd",
+      borderRadius: "4px",
+      fontSize: "14px"
+    },
+    textInput: { 
+      padding: "6px 8px",
+      border: "1px solid #ddd",
+      borderRadius: "4px",
+      fontSize: "13px"
+    },
+    slider: {
+      width: "100%",
+      margin: "0 8px"
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Определяем цвета для оценок
-  const getScoreColor = (score) => {
-    if (score === 0) return '#6c757d'; // Серый
-    if (score <= 2) return '#dc3545'; // Красный
-    if (score === 3) return '#ffc107'; // Желтый
-    if (score === 4) return '#17a2b8'; // Синий
-    return '#28a745'; // Зеленый
-  };
-
-  // Эмодзи для оценок
-  const getScoreEmoji = (score) => {
-    const emojis = ['❌', '😞', '😐', '🙂', '😊', '🎉'];
-    return emojis[score] || '❓';
-  };
-
-  // Мемоизированные стили
-  const wrapperStyle = useMemo(() => ({
-    display: "grid",
-    gridTemplateColumns: "1fr 200px 100px 1fr",
-    alignItems: "center",
-    padding: "16px 0",
-    borderBottom: "1px solid #e9ecef",
-    gap: "16px",
-    transition: "background-color 0.2s ease",
-    backgroundColor: isFocused ? "#f8f9fa" : isModified ? "#fff3cd" : "transparent",
-    borderRadius: isFocused ? "6px" : "0",
-    marginLeft: isFocused ? "-8px" : "0",
-    marginRight: isFocused ? "-8px" : "0",
-    paddingLeft: isFocused ? "24px" : "16px",
-    paddingRight: isFocused ? "24px" : "16px",
-  }), [isFocused, isModified]);
-
-  const titleStyle = useMemo(() => ({
-    fontWeight: 600,
-    lineHeight: 1.3,
-    fontSize: "16px",
-    color: "#212529"
-  }), []);
-
-  const descStyle = useMemo(() => ({
-    color: "#6c757d",
-    fontSize: "14px",
-    marginTop: "6px",
-    whiteSpace: "pre-wrap",
-    lineHeight: 1.4
-  }), []);
-
-  const sliderStyle = useMemo(() => ({
-    width: "100%",
-    height: "8px",
-    borderRadius: "4px",
-    background: `linear-gradient(to right, 
-      #dc3545 0%, #dc3545 20%, 
-      #ffc107 20%, #ffc107 40%, 
-      #17a2b8 40%, #17a2b8 60%, 
-      #28a745 60%, #28a745 80%, 
-      #198754 80%, #198754 100%)`,
-    outline: "none",
-    cursor: "pointer",
-    transition: "all 0.2s ease"
-  }), []);
-
-  const numberInputStyle = useMemo(() => ({
-    width: "70px",
-    padding: "8px 12px",
-    border: `2px solid ${getScoreColor(val)}`,
-    borderRadius: "6px",
-    fontSize: "16px",
-    fontWeight: "600",
-    textAlign: "center",
-    color: getScoreColor(val),
-    backgroundColor: "#fff",
-    transition: "all 0.2s ease",
-    outline: "none"
-  }), [val]);
-
-  const commentInputStyle = useMemo(() => ({
-    padding: "8px 12px",
-    border: `1px solid ${comment.trim() ? "#28a745" : "#dee2e6"}`,
-    borderRadius: "6px",
-    fontSize: "14px",
-    backgroundColor: "#fff",
-    outline: "none",
-    transition: "border-color 0.2s ease",
-    resize: "vertical",
-    minHeight: "38px"
-  }), [comment]);
-
-  const scoreDisplayStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "14px",
-    color: getScoreColor(val),
-    fontWeight: "500"
-  }), [val]);
-
-  const modifiedIndicatorStyle = useMemo(() => ({
-    position: "absolute",
-    top: "-2px",
-    right: "-2px",
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    backgroundColor: "#ffc107",
-    border: "2px solid #fff",
-    display: isModified ? "block" : "none"
-  }), [isModified]);
-
+  }), [isDirty]);
+  
   return (
-    <div 
-      style={wrapperStyle}
-      onMouseEnter={() => setIsFocused(true)}
-      onMouseLeave={() => setIsFocused(false)}
-    >
-      {/* Название и описание навыка */}
-      <div style={{ position: "relative" }}>
-        <div style={titleStyle}>
-          {item.name || item.skillName}
-          <div style={modifiedIndicatorStyle} />
-        </div>
-        {(item.description || item.skillDesc) && (
-          <div style={descStyle}>
-            {item.description || item.skillDesc}
-          </div>
-        )}
-        {item.employeeName && (
-          <div style={{ 
-            fontSize: "12px", 
-            color: "#495057", 
-            marginTop: "4px",
-            fontStyle: "italic"
-          }}>
-            👤 {item.employeeName}
-          </div>
+    <div style={styles.container}>
+      <div>
+        <div style={styles.title}>{item.name}</div>
+        {item.description && (
+          <div style={styles.description}>{item.description}</div>
         )}
       </div>
-
-      {/* Слайдер оценки */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <input
-          type="range"
-          min={0}
-          max={5}
-          step={1}
-          value={val}
-          onChange={(e) => handleValueChange(Number(e.target.value))}
-          style={sliderStyle}
-          aria-label={`Оценка для ${item.name || item.skillName}`}
-        />
-        <div style={scoreDisplayStyle}>
-          <span>{getScoreEmoji(val)}</span>
-          <span>{val}/5</span>
-          {val > 0 && (
-            <span style={{ fontSize: "12px", opacity: 0.7 }}>
-              {val === 1 ? "Низкий" : 
-               val === 2 ? "Ниже среднего" :
-               val === 3 ? "Средний" :
-               val === 4 ? "Хороший" : "Отличный"}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Числовой ввод */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-        <input
-          type="number"
-          min={0}
-          max={5}
-          value={val}
-          style={numberInputStyle}
-          onChange={(e) => handleValueChange(Number(e.target.value))}
-          onFocus={(e) => e.target.select()}
-        />
-        <div style={{ fontSize: "10px", color: "#6c757d", textAlign: "center" }}>
-          0-5
-        </div>
-      </div>
-
-      {/* Комментарий */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <textarea
-          placeholder="Комментарий (необязательно)"
-          value={comment}
-          style={commentInputStyle}
-          onChange={(e) => handleCommentChange(e.target.value)}
-          onFocus={(e) => {
-            setIsFocused(true);
-            e.target.style.borderColor = "#007bff";
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = comment.trim() ? "#28a745" : "#dee2e6";
-          }}
-          rows={1}
-        />
-        <div style={{ 
-          fontSize: "10px", 
-          color: comment.length > 100 ? "#ffc107" : "#6c757d",
-          textAlign: "right"
-        }}>
-          {comment.length}/2000
-          {comment.length > 100 && " ⚠️"}
-        </div>
-      </div>
-
-      {/* Индикатор текущего значения из БД */}
-      {item.current !== null && item.current !== undefined && item.current !== val && (
-        <div style={{
-          position: "absolute",
-          top: "8px",
-          right: "8px",
-          fontSize: "11px",
-          color: "#6c757d",
-          background: "#f8f9fa",
-          padding: "2px 6px",
-          borderRadius: "10px",
-          border: "1px solid #dee2e6"
-        }}>
-          Было: {item.current}
-        </div>
-      )}
+      
+      <input
+        type="range"
+        min={0}
+        max={5}
+        step={1}
+        value={val}
+        style={styles.slider}
+        onChange={(e) => handleValueChange(Number(e.target.value))}
+        aria-label={`Оценка для ${item.name}`}
+      />
+      
+      <input
+        type="number"
+        min={0}
+        max={5}
+        value={val}
+        style={styles.numberInput}
+        onChange={(e) => handleValueChange(Number(e.target.value))}
+        aria-label={`Числовая оценка для ${item.name}`}
+      />
+      
+      <input
+        placeholder="Комментарий (опционально)"
+        value={comment}
+        style={styles.textInput}
+        onChange={(e) => handleCommentChange(e.target.value)}
+        maxLength={2000}
+        aria-label={`Комментарий для ${item.name}`}
+      />
     </div>
   );
-}
+});
 
-// Мемоизация для предотвращения лишних ре-рендеров
-export default memo(ScoreRowInner, (prevProps, nextProps) => {
+ScoreRowOptimized.displayName = 'ScoreRowOptimized';
+
+// Виртуализированный список для больших объемов данных
+const VirtualizedScoreList = memo(({ items, onChange, containerHeight = 600 }) => {
+  const [scrollTop, setScrollTop] = useState(0);
+  const containerRef = useRef();
+  
+  const ITEM_HEIGHT = 80; // Примерная высота одного элемента
+  const BUFFER_SIZE = 5; // Количество элементов для предварительной загрузки
+  
+  const visibleRange = useMemo(() => {
+    const start = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER_SIZE);
+    const end = Math.min(
+      items.length - 1,
+      Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + BUFFER_SIZE
+    );
+    return { start, end };
+  }, [scrollTop, containerHeight, items.length]);
+  
+  const handleScroll = useCallback((e) => {
+    setScrollTop(e.target.scrollTop);
+  }, []);
+  
+  const visibleItems = useMemo(() => {
+    const result = [];
+    for (let i = visibleRange.start; i <= visibleRange.end; i++) {
+      if (items[i]) {
+        result.push({ ...items[i], index: i });
+      }
+    }
+    return result;
+  }, [items, visibleRange]);
+  
+  if (items.length <= 50) {
+    // Для небольших списков виртуализация не нужна
+    return (
+      <div style={{ display: "grid", gap: 0 }}>
+        {items.map((item, index) => (
+          <ScoreRowOptimized
+            key={item.pageId}
+            item={item}
+            index={index}
+            onChange={onChange(item.pageId)}
+          />
+        ))}
+      </div>
+    );
+  }
+  
   return (
-    prevProps.item.pageId === nextProps.item.pageId &&
-    prevProps.item.current === nextProps.item.current &&
-    prevProps.item.comment === nextProps.item.comment &&
-    prevProps.item.name === nextProps.item.name &&
-    prevProps.item.description === nextProps.item.description &&
-    JSON.stringify(prevProps.initialValue) === JSON.stringify(nextProps.initialValue)
+    <div
+      ref={containerRef}
+      style={{
+        height: containerHeight,
+        overflow: "auto",
+        border: "1px solid #ddd",
+        borderRadius: "6px"
+      }}
+      onScroll={handleScroll}
+    >
+      {/* Spacer для правильного отображения скроллбара */}
+      <div style={{ height: visibleRange.start * ITEM_HEIGHT }} />
+      
+      {/* Видимые элементы */}
+      <div>
+        {visibleItems.map((item) => (
+          <ScoreRowOptimized
+            key={item.pageId}
+            item={item}
+            index={item.index}
+            onChange={onChange(item.pageId)}
+          />
+        ))}
+      </div>
+      
+      {/* Spacer для правильного отображения скроллбара */}
+      <div 
+        style={{ 
+          height: (items.length - visibleRange.end - 1) * ITEM_HEIGHT 
+        }} 
+      />
+    </div>
   );
 });
+
+VirtualizedScoreList.displayName = 'VirtualizedScoreList';
+
+// Экспортируем оптимизированный компонент
+export default ScoreRowOptimized;
+export { VirtualizedScoreList };
