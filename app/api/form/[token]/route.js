@@ -98,11 +98,11 @@ export async function GET(req, { params }) {
       console.log(`[FORM GET] Found ${employees?.length || 0} employees for evaluation`);
     } catch (error) {
       PerformanceTracker.end('load-evaluatees');
-      console.error('[FORM GET] Failed to load evaluatees:', error.message);
+      console.error('[FORM GET] Failed to load evaluatees:', error.message, error.stack);
       return NextResponse.json(
         { 
           error: "Ошибка загрузки списка сотрудников для оценки",
-          details: process.env.NODE_ENV === 'development' ? error.message : undefined
+          details: process.env.NODE_ENV === 'development' ? error.message : "Проверьте настройки матрицы компетенций"
         }, 
         { status: 500 }
       );
@@ -130,11 +130,11 @@ export async function GET(req, { params }) {
       console.log(`[FORM GET] Loaded skills for ${skillGroups?.length || 0} employees`);
     } catch (error) {
       PerformanceTracker.end('load-skills');
-      console.error('[FORM GET] Failed to load skills:', error.message);
+      console.error('[FORM GET] Failed to load skills:', error.message, error.stack);
       return NextResponse.json(
         { 
           error: "Ошибка загрузки навыков",
-          details: process.env.NODE_ENV === 'development' ? error.message : undefined
+          details: process.env.NODE_ENV === 'development' ? error.message : "Проверьте настройки матрицы компетенций"
         }, 
         { status: 500 }
       );
@@ -146,16 +146,26 @@ export async function GET(req, { params }) {
     
     try {
       for (const group of skillGroups || []) {
+        if (!group || !group.items) {
+          console.warn(`[FORM GET] Invalid group structure:`, group);
+          continue;
+        }
+        
         for (const item of group.items || []) {
+          if (!item || !item.pageId) {
+            console.warn(`[FORM GET] Invalid item structure:`, item);
+            continue;
+          }
+          
           rows.push({
             pageId: item.pageId,
-            name: item.name,
+            name: item.name || "Неизвестный навык",
             description: item.description || "",
             current: item.current,
             comment: item.comment || "",
             employeeId: group.employeeId,
-            employeeName: group.employeeName,
-            role: group.role
+            employeeName: group.employeeName || "Неизвестный сотрудник",
+            role: group.role || "peer"
           });
           totalSkills++;
         }
@@ -163,7 +173,7 @@ export async function GET(req, { params }) {
       
       console.log(`[FORM GET] Successfully prepared ${totalSkills} skills for ${employees.length} employees`);
     } catch (error) {
-      console.error('[FORM GET] Failed to process skills data:', error.message);
+      console.error('[FORM GET] Failed to process skills data:', error.message, error.stack);
       return NextResponse.json(
         { 
           error: "Ошибка обработки данных навыков",
@@ -286,7 +296,7 @@ export async function POST(req, { params }) {
     
     console.log(`[FORM POST] Processing submission from reviewer: ${reviewerUserId}, items: ${body.items?.length || 0}`);
     
-    // Простая валидация без комментариев
+    // Простая валидация
     if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
         { error: "Необходимо предоставить массив элементов для обновления" }, 
