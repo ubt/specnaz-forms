@@ -1,5 +1,5 @@
-// Убираем export const runtime = 'edge' из layout
-// Layout файлы не должны экспортировать runtime config в Cloudflare
+// Конфиг роута на Edge Runtime для страницы /form/[token]
+export const runtime = 'edge';
 
 export default function FormLayout({ children }) {
   return <>{children}</>;
