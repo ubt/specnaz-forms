@@ -2,6 +2,9 @@
 import { useEffect, useMemo, useState, useTransition, useCallback } from "react";
 import ScoreRow from "@/components/ScoreRow";
 
+// Отключаем статическую генерацию для динамических страниц
+export const dynamic = 'force-dynamic';
+
 export default function FormPage({ params }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -11,11 +14,17 @@ export default function FormPage({ params }) {
   const [pending, startTransition] = useTransition();
   const [lastSaved, setLastSaved] = useState(null);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [mounted, setMounted] = useState(false);
   const token = params.token;
 
   // Состояние черновика
   const [draft, setDraft] = useState({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Проверяем, что компонент смонтирован на клиенте
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Маппинг ролей для отображения
   const getRoleDisplayName = (role) => {
@@ -31,6 +40,8 @@ export default function FormPage({ params }) {
 
   // Функция диагностики
   const runDiagnostic = async () => {
+    if (!mounted) return;
+    
     try {
       const res = await fetch('/api/debug/form', {
         method: 'POST',
@@ -48,6 +59,8 @@ export default function FormPage({ params }) {
 
   // Загрузка данных с улучшенной обработкой ошибок
   useEffect(() => {
+    if (!mounted) return;
+    
     let cancelled = false;
     let retryCount = 0;
     const maxRetries = 3;
@@ -128,7 +141,7 @@ export default function FormPage({ params }) {
     return () => { 
       cancelled = true; 
     };
-  }, [token]);
+  }, [token, mounted]);
 
   // Оптимизированный обработчик изменений
   const onRowChange = useCallback((pageId) => (newData) => {
@@ -173,6 +186,8 @@ export default function FormPage({ params }) {
 
   // Отправка всех оценок
   const submitAll = async () => {
+    if (!mounted) return;
+    
     setMsg("");
     
     const items = Object.entries(draft).map(([pageId, data]) => ({ 
@@ -268,7 +283,8 @@ export default function FormPage({ params }) {
     border: '1px solid #e9ecef'
   };
 
-  if (loading) {
+  // Показываем загрузку, пока компонент не смонтирован
+  if (!mounted || loading) {
     return (
       <main style={containerStyle}>
         <div style={{ textAlign: 'center', padding: 48 }}>
