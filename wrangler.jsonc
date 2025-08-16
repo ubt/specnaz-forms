@@ -1,6 +1,16 @@
 {
   "name": "notion-review-app",
   "compatibility_date": "2024-09-23",
-  "compatibility_flags": ["nodejs_compat"],
-  "pages_build_output_dir": ".vercel/output/static"
+  "compatibility_flags": ["nodejs_compat", "streams_enable_constructors"],
+  "pages_build_output_dir": ".vercel/output/static",
+  
+  // Настройки для лучшей совместимости с Edge Runtime
+  "limits": {
+    "cpu_ms": 50000
+  },
+  
+  // Переменные окружения для development (продакшн задается через Cloudflare Dashboard)
+  "vars": {
+    "NODE_ENV": "production"
+  }
 }
