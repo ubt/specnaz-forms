@@ -1,7 +1,6 @@
-export const runtime = 'edge';
+// Убираем export const runtime = 'edge' из layout
+// Layout файлы не должны экспортировать runtime config в Cloudflare
 
-// Простой «прокладочный» layout для сегмента /form/[token].
-// Он серверный (без "use client"), поэтому Next примет конфиг runtime отсюда.
 export default function FormLayout({ children }) {
   return <>{children}</>;
 }
