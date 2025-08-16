@@ -47,8 +47,8 @@ const nextConfig = {
     return config;
   },
   
-  // Настройки для статического экспорта
-  output: 'export',
+  // Настройки для статического экспорта - временно отключено
+  // output: 'export',
   distDir: '.next',
   
   // Отключаем функции, которые могут конфликтовать с Edge Runtime
