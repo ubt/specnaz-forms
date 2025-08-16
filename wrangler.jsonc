@@ -1,7 +1,7 @@
 {
   "name": "notion-review-app",
   "compatibility_date": "2024-09-23",
-  "compatibility_flags": ["nodejs_compat", "streams_enable_constructors"],
+  "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": ".vercel/output/static",
   
   // Настройки для лучшей совместимости с Edge Runtime
