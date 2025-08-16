@@ -9,17 +9,18 @@ const nextConfig = {
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
-  experimental: {
-    runtime: 'experimental-edge',
-  },
-  // Ensure all API routes use edge runtime
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: '/api/:path*',
-      },
-    ]
+  // Убираем experimental.runtime - это вызывает проблемы
+  webpack: (config, { dev, isServer }) => {
+    // Исправляем проблемы с self/window в SSR
+    if (!dev && !isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
   },
 };
 
