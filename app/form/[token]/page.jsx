@@ -5,6 +5,11 @@ import ScoreRow from "@/components/ScoreRow";
 // Отключаем статическую генерацию для динамических страниц
 export const dynamic = 'force-dynamic';
 
+// Генерируем пустой массив для предотвращения статической генерации
+export async function generateStaticParams() {
+  return []; // Возвращаем пустой массив - никакие параметры не будут предгенерированы
+}
+
 export default function FormPage({ params }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
