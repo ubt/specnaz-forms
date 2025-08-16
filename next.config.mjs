@@ -47,22 +47,9 @@ const nextConfig = {
     return config;
   },
   
-  // Улучшенные настройки для экспорта
+  // Настройки для статического экспорта
   output: 'export',
   distDir: '.next',
-  
-  // Пропускаем проблемные маршруты при статической генерации
-  exportPathMap: async function (defaultPathMap, { dev, dir, outDir, distDir, buildId }) {
-    // Исключаем динамические маршруты из статической генерации
-    const pathMap = {};
-    
-    // Добавляем только статические страницы
-    pathMap['/'] = { page: '/' };
-    pathMap['/admin'] = { page: '/admin' };
-    pathMap['/diagnostic'] = { page: '/diagnostic' };
-    
-    return pathMap;
-  },
   
   // Отключаем функции, которые могут конфликтовать с Edge Runtime
   swcMinify: true,
