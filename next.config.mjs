@@ -1,13 +1,26 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
+  trailingSlash: true,
+  images: {
+    unoptimized: true
+  },
   reactStrictMode: true,
   compiler: {
-    // strip console.* in production builds except error/warn
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
   experimental: {
-    // ensure edge features play nice; keep default app router settings
+    runtime: 'experimental-edge',
   },
-  // Cloudflare Pages uses @cloudflare/next-on-pages; no special output needed here
+  // Ensure all API routes use edge runtime
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: '/api/:path*',
+      },
+    ]
+  },
 };
+
 export default nextConfig;
