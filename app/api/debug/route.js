@@ -16,7 +16,20 @@ export async function GET() {
       NEXT_PUBLIC_BASE_URL: !!(process.env.NEXT_PUBLIC_BASE_URL)
     };
     
-    console.log('[DEBUG] Environment variables:', envCheck);
+    // Логируем только наличие переменных, не их значения
+    console.log('[DEBUG] Environment variables check:', envCheck);
+    
+    // Дополнительно логируем значения для диагностики (только длину для безопасности)
+    const envDetails = {
+      NOTION_TOKEN_length: process.env.NOTION_TOKEN?.length || 0,
+      MATRIX_DB_ID_length: process.env.MATRIX_DB_ID?.length || 0,
+      EMPLOYEES_DB_ID_length: process.env.EMPLOYEES_DB_ID?.length || 0,
+      JWT_SECRET_length: process.env.JWT_SECRET?.length || 0,
+      ADMIN_KEY_length: process.env.ADMIN_KEY?.length || 0,
+      BASE_URL: process.env.NEXT_PUBLIC_BASE_URL || 'not set'
+    };
+    
+    console.log('[DEBUG] Environment details:', envDetails);
     
     // Попробуем импортировать модули
     let importErrors = [];
@@ -52,6 +65,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       runtime: 'edge',
       environment: envCheck,
+      environmentDetails: envDetails,
       importErrors,
       notionCheck,
       nodeEnv: process.env.NODE_ENV
