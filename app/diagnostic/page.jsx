@@ -12,8 +12,6 @@ export default function DiagnosticPage() {
     setResults(null);
 
     try {
-      console.log('Running diagnostic tests...');
-      
       const tests = [];
       
       // Test 1: Basic API health
@@ -45,23 +43,6 @@ export default function DiagnosticPage() {
       } catch (error) {
         tests.push({
           name: 'Environment Variables',
-          status: 'fail',
-          error: error.message
-        });
-      }
-
-      // Test 3: Admin health check
-      try {
-        const adminRes = await fetch('/api/admin/health');
-        const adminData = await adminRes.json();
-        tests.push({
-          name: 'Admin Health Check',
-          status: adminRes.ok && adminData.allConfigured ? 'pass' : 'fail',
-          data: adminData
-        });
-      } catch (error) {
-        tests.push({
-          name: 'Admin Health Check',
           status: 'fail',
           error: error.message
         });
@@ -122,44 +103,6 @@ export default function DiagnosticPage() {
     }
   };
 
-  const testSkillLoading = async () => {
-    const skillId = prompt('Введите ID навыка для тестирования (из результатов диагностики):');
-    if (!skillId) return;
-
-    setLoading(true);
-    
-    try {
-      const res = await fetch('/api/debug/skills', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skillId: skillId.trim() })
-      });
-
-      const data = await res.json();
-      
-      setResults({
-        skillTest: {
-          status: res.ok ? 'pass' : 'fail',
-          data,
-          skillId: skillId.trim()
-        },
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      setResults({
-        skillTest: {
-          status: 'fail',
-          error: error.message,
-          skillId: skillId.trim()
-        },
-        timestamp: new Date().toISOString()
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const getStatusColor = (status) => {
     switch (status) {
       case 'pass': return '#28a745';
@@ -195,28 +138,11 @@ export default function DiagnosticPage() {
             fontSize: 14,
             fontWeight: 600,
             marginRight: 12,
-            marginBottom: 12,
-            opacity: loading ? 0.7 : 1
+            marginBottom: 12
           }}
-          <button
-            onClick={testSkillLoading}
-            disabled={loading}
-            style={{
-              padding: '12px 20px',
-              background: loading ? '#6c757d' : '#17a2b8',
-              color: 'white',
-              border: 'none',
-              borderRadius: 6,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-              marginRight: 12,
-              marginBottom: 12,
-              opacity: loading ? 0.7 : 1
-            }}
-          >
-            🎯 Тест загрузки навыка
-          </button>
+        >
+          {loading ? 'Выполняется...' : '🏥 Полная диагностика'}
+        </button>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 16 }}>
           <input
@@ -258,17 +184,9 @@ export default function DiagnosticPage() {
           borderRadius: 8,
           padding: 20
         }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 20
-          }}>
-            <h3 style={{ margin: 0, fontSize: 18 }}>Результаты диагностики</h3>
-            <span style={{ fontSize: 12, color: '#6c757d' }}>
-              {new Date(results.timestamp).toLocaleString()}
-            </span>
-          </div>
+          <h3 style={{ margin: 0, marginBottom: 20, fontSize: 18 }}>
+            Результаты диагностики
+          </h3>
 
           {results.error && (
             <div style={{
@@ -283,249 +201,130 @@ export default function DiagnosticPage() {
             </div>
           )}
 
-          {results.tests && (
-            <div>
-              <h4 style={{ marginBottom: 16 }}>Системные тесты:</h4>
-              {results.tests.map((test, index) => (
+          {results.tests && results.tests.map((test, index) => (
+            <div
+              key={index}
+              style={{
+                background: 'white',
+                border: '1px solid #dee2e6',
+                borderRadius: 6,
+                padding: 16,
+                marginBottom: 12
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: 8
+              }}>
                 <div
-                  key={index}
                   style={{
-                    background: 'white',
-                    border: '1px solid #dee2e6',
-                    borderRadius: 6,
-                    padding: 16,
-                    marginBottom: 12
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: getStatusColor(test.status),
+                    marginRight: 8
                   }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    marginBottom: 8
-                  }}>
-                    <div
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        background: getStatusColor(test.status),
-                        marginRight: 8
-                      }}
-                    />
-                    <strong>{test.name}</strong>
-                    <span style={{
-                      marginLeft: 'auto',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: test.status === 'pass' ? '#d4edda' : '#f8d7da',
-                      color: test.status === 'pass' ? '#155724' : '#721c24'
-                    }}>
-                      {test.status === 'pass' ? 'ПРОШЕЛ' : 'ПРОВАЛЕН'}
-                    </span>
-                  </div>
-                  
-                  {test.error && (
-                    <div style={{
-                      background: '#fff3cd',
-                      border: '1px solid #ffeaa7',
-                      padding: 8,
-                      borderRadius: 4,
-                      fontSize: 12,
-                      color: '#856404',
-                      marginBottom: 8
-                    }}>
-                      Ошибка: {test.error}
-                    </div>
-                  )}
-                  
-                  {test.data && (
-                    <details style={{ fontSize: 12 }}>
-                      <summary style={{ cursor: 'pointer', marginBottom: 8 }}>
-                        Детали
-                      </summary>
-                      <pre style={{
-                        background: '#f1f3f4',
-                        padding: 8,
-                        borderRadius: 4,
-                        overflow: 'auto',
-                        fontSize: 11,
-                        lineHeight: 1.4
-                      }}>
-                        {JSON.stringify(test.data, null, 2)}
-                      </pre>
-                    </details>
-                  )}
+                />
+                <strong>{test.name}</strong>
+                <span style={{
+                  marginLeft: 'auto',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: test.status === 'pass' ? '#d4edda' : '#f8d7da',
+                  color: test.status === 'pass' ? '#155724' : '#721c24'
+                }}>
+                  {test.status === 'pass' ? 'ПРОШЕЛ' : 'ПРОВАЛЕН'}
+                </span>
+              </div>
+              
+              {test.error && (
+                <div style={{
+                  background: '#fff3cd',
+                  border: '1px solid #ffeaa7',
+                  padding: 8,
+                  borderRadius: 4,
+                  fontSize: 12,
+                  color: '#856404',
+                  marginBottom: 8
+                }}>
+                  Ошибка: {test.error}
                 </div>
-              ))}
+              )}
+              
+              {test.data && (
+                <details style={{ fontSize: 12 }}>
+                  <summary style={{ cursor: 'pointer', marginBottom: 8 }}>
+                    Детали
+                  </summary>
+                  <pre style={{
+                    background: '#f1f3f4',
+                    padding: 8,
+                    borderRadius: 4,
+                    overflow: 'auto',
+                    fontSize: 11,
+                    lineHeight: 1.4
+                  }}>
+                    {JSON.stringify(test.data, null, 2)}
+                  </pre>
+                </details>
+              )}
             </div>
-          )}
+          ))}
 
           {results.teamSearch && (
-            <div>
-              <h4 style={{ marginBottom: 16 }}>
-                Тест поиска команды "{results.teamSearch.teamName}":
-              </h4>
+            <div style={{
+              background: 'white',
+              border: '1px solid #dee2e6',
+              borderRadius: 6,
+              padding: 16
+            }}>
               <div style={{
-                background: 'white',
-                border: '1px solid #dee2e6',
-                borderRadius: 6,
-                padding: 16
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: 8
               }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  marginBottom: 8
+                <div
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: getStatusColor(results.teamSearch.status),
+                    marginRight: 8
+                  }}
+                />
+                <strong>Поиск команды "{results.teamSearch.teamName}"</strong>
+                <span style={{
+                  marginLeft: 'auto',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: results.teamSearch.status === 'pass' ? '#d4edda' : '#f8d7da',
+                  color: results.teamSearch.status === 'pass' ? '#155724' : '#721c24'
                 }}>
-                  <div
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      background: getStatusColor(results.teamSearch.status),
-                      marginRight: 8
-                    }}
-                  />
-                  <strong>Поиск команды</strong>
-                  <span style={{
-                    marginLeft: 'auto',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: results.teamSearch.status === 'pass' ? '#d4edda' : '#f8d7da',
-                    color: results.teamSearch.status === 'pass' ? '#155724' : '#721c24'
-                  }}>
-                    {results.teamSearch.status === 'pass' ? 'НАЙДЕНО' : 'НЕ НАЙДЕНО'}
-                  </span>
-                </div>
-                
-                {results.teamSearch.error && (
-                  <div style={{
-                    background: '#fff3cd',
-                    border: '1px solid #ffeaa7',
-                    padding: 8,
-                    borderRadius: 4,
-                    fontSize: 12,
-                    color: '#856404',
-                    marginBottom: 8
-                  }}>
-                    Ошибка: {results.teamSearch.error}
-                  </div>
-                )}
-                
-                {results.teamSearch.data && (
-                  <details style={{ fontSize: 12 }}>
-                    <summary style={{ cursor: 'pointer', marginBottom: 8 }}>
-                      Результаты поиска
-                    </summary>
-                    <pre style={{
-                      background: '#f1f3f4',
-                      padding: 8,
-                      borderRadius: 4,
-                      overflow: 'auto',
-                      fontSize: 11,
-                      lineHeight: 1.4
-                    }}>
-                      {JSON.stringify(results.teamSearch.data, null, 2)}
-                    </pre>
-                  </details>
-                )}
+                  {results.teamSearch.status === 'pass' ? 'НАЙДЕНО' : 'НЕ НАЙДЕНО'}
+                </span>
               </div>
-            </div>
-          {results.skillTest && (
-            <div>
-              <h4 style={{ marginBottom: 16 }}>
-                Тест навыка "{results.skillTest.skillId}":
-              </h4>
-              <div style={{
-                background: 'white',
-                border: '1px solid #dee2e6',
-                borderRadius: 6,
-                padding: 16
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  marginBottom: 8
+              
+              {results.teamSearch.data && (
+                <pre style={{
+                  background: '#f1f3f4',
+                  padding: 8,
+                  borderRadius: 4,
+                  overflow: 'auto',
+                  fontSize: 11,
+                  lineHeight: 1.4
                 }}>
-                  <div
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      background: getStatusColor(results.skillTest.status),
-                      marginRight: 8
-                    }}
-                  />
-                  <strong>Загрузка навыка</strong>
-                  <span style={{
-                    marginLeft: 'auto',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: results.skillTest.status === 'pass' ? '#d4edda' : '#f8d7da',
-                    color: results.skillTest.status === 'pass' ? '#155724' : '#721c24'
-                  }}>
-                    {results.skillTest.status === 'pass' ? 'УСПЕШНО' : 'ОШИБКА'}
-                  </span>
-                </div>
-                
-                {results.skillTest.error && (
-                  <div style={{
-                    background: '#fff3cd',
-                    border: '1px solid #ffeaa7',
-                    padding: 8,
-                    borderRadius: 4,
-                    fontSize: 12,
-                    color: '#856404',
-                    marginBottom: 8
-                  }}>
-                    Ошибка: {results.skillTest.error}
-                  </div>
-                )}
-                
-                {results.skillTest.data && (
-                  <details style={{ fontSize: 12 }}>
-                    <summary style={{ cursor: 'pointer', marginBottom: 8 }}>
-                      Детали тестирования навыка
-                    </summary>
-                    <pre style={{
-                      background: '#f1f3f4',
-                      padding: 8,
-                      borderRadius: 4,
-                      overflow: 'auto',
-                      fontSize: 11,
-                      lineHeight: 1.4
-                    }}>
-                      {JSON.stringify(results.skillTest.data, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
+                  {JSON.stringify(results.teamSearch.data, null, 2)}
+                </pre>
+              )}
             </div>
           )}
         </div>
       )}
-
-      <div style={{
-        marginTop: 32,
-        padding: 16,
-        background: '#e7f3ff',
-        border: '1px solid #b8daff',
-        borderRadius: 6,
-        fontSize: 14
-      }}>
-        <h4 style={{ margin: '0 0 8px', fontSize: 16 }}>💡 Руководство по диагностике</h4>
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
-          <li><strong>Полная диагностика</strong> - проверяет все основные системы</li>
-          <li><strong>Тест поиска команды</strong> - проверяет подключение к Notion и поиск сотрудников</li>
-          <li>Зеленый статус = все работает</li>
-          <li>Красный статус = есть проблемы, проверьте детали</li>
-          <li>Если все тесты провалены - проверьте переменные окружения</li>
-        </ul>
-      </div>
 
       <div style={{ marginTop: 24, textAlign: 'center' }}>
         <a 
