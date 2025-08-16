@@ -9,8 +9,9 @@
     "cpu_ms": 50000
   },
   
-  // Переменные окружения для development (продакшн задается через Cloudflare Dashboard)
+  // Обычные переменные окружения
   "vars": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "NEXT_PUBLIC_BASE_URL": "https://specnaz-forms.pages.dev"
   }
 }
