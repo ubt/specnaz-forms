@@ -10,10 +10,11 @@ export default function FormPage({ params }) {
   const [stats, setStats] = useState(null);
   const [pending, startTransition] = useTransition();
   const [lastSaved, setLastSaved] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
   const token = params.token;
 
-  // Состояние черновика с оптимизацией
-  const [draft, setDraft] = useState({}); // pageId -> { value }
+  // Состояние черновика
+  const [draft, setDraft] = useState({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Маппинг ролей для отображения
@@ -28,6 +29,23 @@ export default function FormPage({ params }) {
     return roleMap[role] || 'Peer';
   };
 
+  // Функция диагностики
+  const runDiagnostic = async () => {
+    try {
+      const res = await fetch('/api/debug/form', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      setDebugInfo(data);
+      console.log('Diagnostic results:', data);
+    } catch (error) {
+      console.error('Diagnostic failed:', error);
+      setDebugInfo({ error: error.message });
+    }
+  };
+
   // Загрузка данных с улучшенной обработкой ошибок
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +58,8 @@ export default function FormPage({ params }) {
         setMsg("");
         
         try {
+          console.log(`[LOAD] Attempt ${retryCount + 1} for token: ${token.substring(0, 10)}...`);
+          
           const res = await fetch(`/api/form/${token}`, { 
             cache: "no-store",
             headers: {
@@ -47,18 +67,20 @@ export default function FormPage({ params }) {
             }
           });
           
+          console.log(`[LOAD] Response status: ${res.status}`);
+          
           const data = await res.json();
+          console.log(`[LOAD] Response data:`, data);
           
           if (!res.ok) {
-            // Специальная обработка для разных типов ошибок
             if (res.status === 401) {
-              throw new Error(data?.error || "Ссылка недействительна или истекла");
+              throw new Error("Ссылка недействительна или истекла");
             }
             if (res.status === 404) {
               throw new Error("Не найдено сотрудников для оценки");
             }
             if (res.status >= 500) {
-              throw new Error("Ошибка сервера. Попробуйте обновить страницу");
+              throw new Error(data?.error || "Ошибка сервера");
             }
             throw new Error(data?.error || `HTTP ${res.status}`);
           }
@@ -67,31 +89,31 @@ export default function FormPage({ params }) {
             setRows(data?.rows || []);
             setStats(data?.stats || null);
             
-            // Показываем полезную информацию пользователю
-            if (data?.stats) {
-              const { totalEmployees, totalSkills, loadTime } = data.stats;
-              console.log(`Загружено: ${totalSkills} навыков для ${totalEmployees} сотрудников за ${loadTime}ms`);
-            }
-            
             if (data?.warning) {
               setMsg(`Предупреждение: ${data.warning}`);
+            } else if (data?.rows?.length > 0) {
+              setMsg(`Загружено ${data.rows.length} навыков для оценки`);
+              setTimeout(() => setMsg(""), 3000);
             }
           }
           break; // Успешно загружено
           
         } catch (error) {
           retryCount++;
-          console.error(`Load attempt ${retryCount} failed:`, error);
+          console.error(`[LOAD] Attempt ${retryCount} failed:`, error);
           
           if (retryCount >= maxRetries || cancelled) {
             if (!cancelled) {
               setMsg(error.message || "Не удалось загрузить данные");
+              console.log('[LOAD] Running diagnostic...');
+              await runDiagnostic();
             }
             break;
           }
           
           // Экспоненциальная задержка перед повтором
           const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
+          setMsg(`Попытка ${retryCount} не удалась, повтор через ${delay/1000}с...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -108,7 +130,7 @@ export default function FormPage({ params }) {
     };
   }, [token]);
 
-  // Оптимизированный обработчик изменений (убрали comment)
+  // Оптимизированный обработчик изменений
   const onRowChange = useCallback((pageId) => (newData) => {
     setDraft(prev => {
       const updated = { ...prev, [pageId]: { value: newData.value } };
@@ -117,7 +139,7 @@ export default function FormPage({ params }) {
     });
   }, []);
 
-  // Группировка навыков по сотрудникам для лучшего UX
+  // Группировка навыков по сотрудникам
   const groupedRows = useMemo(() => {
     const groups = {};
     
@@ -149,19 +171,6 @@ export default function FormPage({ params }) {
     };
   }, [rows.length, draft]);
 
-  // Автосохранение черновика (опционально)
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-    
-    const autoSaveTimer = setTimeout(() => {
-      // Здесь можно добавить автосохранение в localStorage
-      // или отправку на сервер в режиме "draft"
-      console.log('Auto-save draft...', Object.keys(draft).length, 'items');
-    }, 30000); // Автосохранение через 30 секунд
-
-    return () => clearTimeout(autoSaveTimer);
-  }, [draft, hasUnsavedChanges]);
-
   // Отправка всех оценок
   const submitAll = async () => {
     setMsg("");
@@ -169,7 +178,7 @@ export default function FormPage({ params }) {
     const items = Object.entries(draft).map(([pageId, data]) => ({ 
       pageId, 
       value: data.value,
-      comment: "" // Убираем комментарии из отправки
+      comment: ""
     }));
     
     if (!items.length) { 
@@ -181,12 +190,13 @@ export default function FormPage({ params }) {
       let progressTimer;
       setProgress(0);
       
-      // Симуляция прогресса для лучшего UX
       progressTimer = setInterval(() => {
         setProgress(prev => Math.min(90, prev + Math.random() * 10));
       }, 100);
 
       try {
+        console.log(`[SUBMIT] Sending ${items.length} items`);
+        
         const res = await fetch(`/api/form/${token}`, {
           method: "POST",
           headers: { 
@@ -200,13 +210,14 @@ export default function FormPage({ params }) {
         });
         
         const data = await res.json();
+        console.log(`[SUBMIT] Response:`, data);
         
         if (!res.ok) {
           if (res.status === 401) {
             throw new Error("Ссылка истекла. Запросите новую ссылку у администратора.");
           }
           if (res.status === 403) {
-            throw new Error("Нет прав для обновления некоторых записей");
+            throw new Error("Нет прав для обновления записей");
           }
           if (res.status === 429) {
             throw new Error("Слишком много запросов. Попробуйте через несколько секунд.");
@@ -219,21 +230,15 @@ export default function FormPage({ params }) {
         setHasUnsavedChanges(false);
         setLastSaved(new Date());
         
-        const successMsg = `Готово! Отправлено ${data.updated || items.length} оценок.`;
+        const successMsg = `✅ Готово! Отправлено ${data.updated || items.length} оценок.`;
         setMsg(successMsg);
         
-        // Показываем статистику если есть
-        if (data.stats?.updateTime) {
-          console.log(`Обновление завершено за ${data.stats.updateTime}ms`);
-        }
-        
-        // Очищаем сообщение через 5 секунд
         setTimeout(() => setMsg(""), 5000);
         
       } catch (error) {
         clearInterval(progressTimer);
         setProgress(0);
-        setMsg(error.message || "Ошибка отправки данных");
+        setMsg(`❌ ${error.message || "Ошибка отправки данных"}`);
         console.error('Submit error:', error);
       }
     });
@@ -262,44 +267,6 @@ export default function FormPage({ params }) {
     borderRadius: 8,
     border: '1px solid #e9ecef'
   };
-  
-  const statsStyle = { 
-    display: 'flex', 
-    gap: 16, 
-    flexWrap: 'wrap',
-    fontSize: 14,
-    color: '#666'
-  };
-  
-  const buttonGroupStyle = { 
-    display: "flex", 
-    gap: 12, 
-    marginTop: 24,
-    flexWrap: 'wrap'
-  };
-  
-  const primaryButtonStyle = { 
-    padding: "12px 24px", 
-    background: pending ? "#6c757d" : "#007bff", 
-    color: "#fff", 
-    border: 'none',
-    borderRadius: 6,
-    fontSize: 16,
-    fontWeight: 500,
-    cursor: pending ? 'not-allowed' : 'pointer',
-    transition: 'background-color 0.2s'
-  };
-  
-  const secondaryButtonStyle = { 
-    padding: "12px 24px", 
-    background: "#fff", 
-    color: "#6c757d", 
-    border: '1px solid #dee2e6',
-    borderRadius: 6,
-    fontSize: 16,
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  };
 
   if (loading) {
     return (
@@ -321,6 +288,22 @@ export default function FormPage({ params }) {
               animation: 'loading 1.5s ease-in-out infinite'
             }} />
           </div>
+          
+          {/* Показываем диагностику если есть ошибки */}
+          {debugInfo && (
+            <div style={{ 
+              marginTop: 24,
+              padding: 16,
+              background: '#f8f9fa',
+              borderRadius: 8,
+              textAlign: 'left',
+              fontSize: 12,
+              fontFamily: 'monospace'
+            }}>
+              <h4>Диагностика:</h4>
+              <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+            </div>
+          )}
         </div>
         <style jsx>{`
           @keyframes loading {
@@ -342,10 +325,13 @@ export default function FormPage({ params }) {
         </h1>
         
         {stats && (
-          <div style={statsStyle}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 14, color: '#666' }}>
             <span>📊 Сотрудников: <strong>{stats.totalEmployees}</strong></span>
             <span>🎯 Навыков: <strong>{stats.totalSkills}</strong></span>
             <span>✅ Заполнено: <strong>{progressStats.filled}/{progressStats.total}</strong> ({progressStats.percentage}%)</span>
+            {stats.reviewerRole && (
+              <span>👤 Роль: <strong>{getRoleDisplayName(stats.reviewerRole)}</strong></span>
+            )}
           </div>
         )}
         
@@ -407,13 +393,21 @@ export default function FormPage({ params }) {
           ))}
           
           {/* Элементы управления */}
-          <div style={buttonGroupStyle}>
+          <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
             <button
               onClick={submitAll}
               disabled={pending || !Object.keys(draft).length}
-              style={primaryButtonStyle}
-              onMouseOver={(e) => !pending && (e.target.style.background = '#0056b3')}
-              onMouseOut={(e) => !pending && (e.target.style.background = '#007bff')}
+              style={{
+                padding: "12px 24px",
+                background: pending || !Object.keys(draft).length ? "#6c757d" : "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: pending || !Object.keys(draft).length ? "not-allowed" : "pointer",
+                transition: "all 0.2s ease"
+              }}
             >
               {pending ? "Отправка..." : `Отправить все (${Object.keys(draft).length})`}
             </button>
@@ -421,9 +415,16 @@ export default function FormPage({ params }) {
             <button
               onClick={resetForm}
               disabled={pending || !Object.keys(draft).length}
-              style={secondaryButtonStyle}
-              onMouseOver={(e) => !pending && (e.target.style.background = '#f8f9fa')}
-              onMouseOut={(e) => !pending && (e.target.style.background = '#fff')}
+              style={{
+                padding: "12px 24px",
+                background: "#fff",
+                color: "#6c757d",
+                border: '1px solid #dee2e6',
+                borderRadius: 8,
+                fontSize: 16,
+                cursor: pending || !Object.keys(draft).length ? "not-allowed" : "pointer",
+                transition: 'all 0.2s'
+              }}
             >
               Очистить форму
             </button>
@@ -479,9 +480,46 @@ export default function FormPage({ params }) {
         }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
           <div style={{ fontSize: 18, marginBottom: 8 }}>Нет сотрудников для оценки</div>
-          <div style={{ color: '#6c757d' }}>
+          <div style={{ color: '#6c757d', marginBottom: 16 }}>
             Возможно, для вас не назначены задачи по оценке, или данные ещё загружаются.
           </div>
+          
+          {/* Кнопка диагностики */}
+          <button
+            onClick={runDiagnostic}
+            style={{
+              padding: "8px 16px",
+              background: "#17a2b8",
+              color: "white",
+              border: "none",
+              borderRadius: 4,
+              fontSize: 14,
+              cursor: "pointer"
+            }}
+          >
+            🔍 Запустить диагностику
+          </button>
+          
+          {/* Показываем результаты диагностики */}
+          {debugInfo && (
+            <div style={{ 
+              marginTop: 24,
+              padding: 16,
+              background: '#fff',
+              borderRadius: 8,
+              textAlign: 'left',
+              fontSize: 12,
+              fontFamily: 'monospace',
+              border: '1px solid #ddd',
+              maxHeight: 400,
+              overflow: 'auto'
+            }}>
+              <h4 style={{ fontFamily: 'system-ui', fontSize: 16, marginBottom: 12 }}>
+                Результаты диагностики:
+              </h4>
+              <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+            </div>
+          )}
         </div>
       )}
       
@@ -490,10 +528,13 @@ export default function FormPage({ params }) {
         <div style={{ 
           marginTop: 16, 
           padding: 12,
-          background: msg.includes('Готово') || msg.includes('✓') ? '#d4edda' : msg.includes('Ошибка') || msg.includes('⚠️') ? '#f8d7da' : '#d1ecf1',
-          color: msg.includes('Готово') || msg.includes('✓') ? '#155724' : msg.includes('Ошибка') || msg.includes('⚠️') ? '#721c24' : '#0c5460',
+          background: msg.includes('✅') || msg.includes('✓') ? '#d4edda' : 
+                     msg.includes('❌') || msg.includes('⚠️') ? '#f8d7da' : '#d1ecf1',
+          color: msg.includes('✅') || msg.includes('✓') ? '#155724' : 
+                 msg.includes('❌') || msg.includes('⚠️') ? '#721c24' : '#0c5460',
           borderRadius: 6,
-          border: `1px solid ${msg.includes('Готово') || msg.includes('✓') ? '#c3e6cb' : msg.includes('Ошибка') || msg.includes('⚠️') ? '#f5c6cb' : '#bee5eb'}`,
+          border: `1px solid ${msg.includes('✅') || msg.includes('✓') ? '#c3e6cb' : 
+                                msg.includes('❌') || msg.includes('⚠️') ? '#f5c6cb' : '#bee5eb'}`,
           fontSize: 14
         }}>
           {msg}
