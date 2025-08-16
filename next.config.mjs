@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  // Убираем output: 'export' - это вызывает проблемы с динамическими роутами
   trailingSlash: true,
   images: {
     unoptimized: true
@@ -9,7 +9,6 @@ const nextConfig = {
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
-  // Убираем experimental.runtime - это вызывает проблемы
   webpack: (config, { dev, isServer }) => {
     // Исправляем проблемы с self/window в SSR
     if (!dev && !isServer) {
