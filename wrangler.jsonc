@@ -7,11 +7,7 @@
   // Настройки для лучшей совместимости с Edge Runtime
   "limits": {
     "cpu_ms": 50000
-  },
-  
-  // Обычные переменные окружения
-  "vars": {
-    "NODE_ENV": "production",
-    "NEXT_PUBLIC_BASE_URL": "https://specnaz-forms.pages.dev"
   }
+  
+  // Удаляем vars секцию, так как переменные уже настроены в Cloudflare Dashboard
 }
