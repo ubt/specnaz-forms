@@ -58,10 +58,8 @@ export default function Home() {
               textDecoration: 'none',
               borderRadius: 8,
               fontWeight: 600,
-              transition: 'all 0.2s ease'
+              transition: 'background-color 0.2s ease'
             }}
-            onMouseOver={(e) => e.target.style.background = '#0056b3'}
-            onMouseOut={(e) => e.target.style.background = '#007bff'}
           >
             Открыть админ-панель
           </a>
@@ -96,10 +94,8 @@ export default function Home() {
               textDecoration: 'none',
               borderRadius: 8,
               fontWeight: 600,
-              transition: 'all 0.2s ease'
+              transition: 'background-color 0.2s ease'
             }}
-            onMouseOver={(e) => e.target.style.background = '#1e7e34'}
-            onMouseOut={(e) => e.target.style.background = '#28a745'}
           >
             Запустить диагностику
           </a>
