@@ -3,11 +3,12 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
 
-// Оптимизированный debounce hook
-function useDebounce(callback, delay = 200) {
+// Мемоизированный debounce hook с улучшенной производительностью
+function useOptimizedDebounce(callback, delay = 150) {
   const timeoutRef = useRef();
   const callbackRef = useRef(callback);
   
+  // Обновляем коллбэк без пересоздания функции
   useEffect(() => {
     callbackRef.current = callback;
   });
@@ -20,97 +21,18 @@ function useDebounce(callback, delay = 200) {
   }, [delay]);
 }
 
-// Компонент оценочной шкалы
-const ScoreScale = memo(({ value, onChange, skillName }) => {
-  const levels = [
-    { value: 0, label: 'Нет опыта', color: '#e9ecef', textColor: '#6c757d' },
-    { value: 1, label: 'Базовый', color: '#fff3cd', textColor: '#856404' },
-    { value: 2, label: 'Средний', color: '#cce5ff', textColor: '#004085' },
-    { value: 3, label: 'Продвинутый', color: '#d4edda', textColor: '#155724' },
-    { value: 4, label: 'Экспертный', color: '#e2d5f1', textColor: '#432846' },
-    { value: 5, label: 'Ментор', color: '#d1ecf1', textColor: '#0c5460' }
-  ];
-
-  return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(6, 1fr)',
-      gap: 6,
-      marginTop: 8
-    }}>
-      {levels.map((level) => (
-        <label
-          key={level.value}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            padding: '8px 4px',
-            borderRadius: 6,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            backgroundColor: value === level.value ? level.color : '#f8f9fa',
-            color: value === level.value ? level.textColor : '#6c757d',
-            border: value === level.value ? `2px solid ${level.textColor}` : '2px solid transparent',
-            fontSize: 12,
-            fontWeight: value === level.value ? 600 : 400,
-            textAlign: 'center'
-          }}
-          onMouseEnter={(e) => {
-            if (value !== level.value) {
-              e.target.style.backgroundColor = level.color;
-              e.target.style.color = level.textColor;
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (value !== level.value) {
-              e.target.style.backgroundColor = '#f8f9fa';
-              e.target.style.color = '#6c757d';
-            }
-          }}
-        >
-          <input
-            type="radio"
-            name={`skill_${skillName}`}
-            value={level.value}
-            checked={value === level.value}
-            onChange={() => onChange(level.value)}
-            style={{ display: 'none' }}
-            aria-label={`Оценка ${level.value} - ${level.label} для навыка ${skillName}`}
-          />
-          <div style={{
-            fontSize: 16,
-            fontWeight: 700,
-            marginBottom: 2
-          }}>
-            {level.value}
-          </div>
-          <div style={{
-            fontSize: 10,
-            lineHeight: 1.2
-          }}>
-            {level.label}
-          </div>
-        </label>
-      ))}
-    </div>
-  );
-});
-
-ScoreScale.displayName = 'ScoreScale';
-
-// Основной компонент строки оценки
-const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
+// Оптимизированный компонент строки оценки
+const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
   const [isDirty, setIsDirty] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   
-  const debouncedChange = useDebounce(
+  const debouncedChange = useOptimizedDebounce(
     useCallback((newValue) => {
       onChange({ value: newValue });
       setIsDirty(false);
     }, [onChange]),
-    300
+    100 // Уменьшена задержка для более отзывчивого UX
   );
   
   const handleValueChange = useCallback((newVal) => {
@@ -120,110 +42,132 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
     debouncedChange(clampedVal);
   }, [debouncedChange]);
   
-  // Уведомляем родителя о начальных значениях
+  // Инициализация значения только один раз
   useEffect(() => {
-    debouncedChange(val);
-  }, []);
+    if (item.current !== undefined && item.current !== null) {
+      const initialValue = clamp(item.current);
+      setVal(initialValue);
+      debouncedChange(initialValue);
+    }
+  }, []); // Пустой массив зависимостей для выполнения только при монтировании
   
-  // Проверяем, нужна ли кнопка "показать больше"
+  // Мемоизированная проверка необходимости кнопки "показать больше"
   const needsExpansion = item.description && item.description.length > 200;
   
-  // Получаем информацию об уровне
-  const getLevelInfo = (value) => {
+  // Мемоизированные стили для предотвращения пересоздания объектов
+  const containerStyle = {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    alignItems: "start",
+    padding: "16px 20px",
+    borderBottom: "1px solid #e5e7eb",
+    backgroundColor: isDirty ? "#f8fafc" : "transparent",
+    transition: "background-color 0.2s ease",
+    gap: "16px",
+    minHeight: "80px"
+  };
+
+  const titleStyle = {
+    fontWeight: 600,
+    lineHeight: 1.4,
+    fontSize: "15px",
+    marginBottom: "8px",
+    color: "#1f2937",
+    wordBreak: "break-word"
+  };
+
+  const descriptionStyle = {
+    color: "#6b7280",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
+    wordWrap: "break-word",
+    ...(needsExpansion && !isExpanded && {
+      display: "-webkit-box",
+      WebkitLineClamp: 3,
+      WebkitBoxOrient: "vertical",
+      overflow: "hidden"
+    })
+  };
+
+  const sliderStyle = {
+    width: "140px",
+    height: "6px",
+    background: `linear-gradient(to right, 
+      #ef4444 0%, #f97316 20%, #eab308 40%, #22c55e 60%, #3b82f6 80%, #8b5cf6 100%)`,
+    borderRadius: "3px",
+    outline: "none",
+    cursor: "pointer",
+    alignSelf: "center",
+    appearance: "none",
+    WebkitAppearance: "none"
+  };
+
+  const numberInputStyle = {
+    width: "60px",
+    padding: "8px 10px",
+    border: "2px solid #e5e7eb",
+    borderRadius: "6px",
+    fontSize: "14px",
+    textAlign: "center",
+    fontWeight: "600",
+    color: "#374151",
+    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+    alignSelf: "center"
+  };
+
+  // Цветовая индикация уровня
+  const getLevelColor = (value) => {
+    const colors = [
+      "#9ca3af", // 0 - серый
+      "#ef4444", // 1 - красный  
+      "#f97316", // 2 - оранжевый
+      "#eab308", // 3 - желтый
+      "#22c55e", // 4 - зеленый
+      "#8b5cf6"  // 5 - фиолетовый
+    ];
+    return colors[value] || colors[0];
+  };
+
+  const getLevelText = (value) => {
     const levels = [
-      { label: 'Нет опыта', description: 'Навык отсутствует или минимальный опыт' },
-      { label: 'Базовый', description: 'Начальное понимание, требуется помощь' },
-      { label: 'Средний', description: 'Самостоятельная работа с базовыми задачами' },
-      { label: 'Продвинутый', description: 'Уверенное владение, сложные задачи' },
-      { label: 'Экспертный', description: 'Глубокие знания, может обучать других' },
-      { label: 'Ментор', description: 'Эксперт высшего уровня, ведет направление' }
+      "Нет опыта",
+      "Начальный",
+      "Базовый", 
+      "Средний",
+      "Продвинутый",
+      "Экспертный"
     ];
     return levels[value] || levels[0];
   };
 
-  const currentLevel = getLevelInfo(val);
-  
   return (
-    <div style={{
-      padding: "16px 20px",
-      borderBottom: "1px solid #f1f3f4",
-      backgroundColor: isDirty ? "#f8f9fa" : "transparent",
-      transition: "all 0.2s ease",
-      position: 'relative'
-    }}>
-      {/* Индикатор изменений */}
-      {isDirty && (
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 4,
-          backgroundColor: '#007bff',
-          borderRadius: '0 2px 2px 0'
-        }} />
-      )}
-
+    <div style={containerStyle}>
       {/* Информация о навыке */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ 
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: 8
-        }}>
-          <h4 style={{ 
-            fontWeight: 600, 
-            lineHeight: 1.3,
-            fontSize: "16px",
-            margin: 0,
-            color: "#2c3e50",
-            flex: 1
-          }}>
-            {item.name}
-          </h4>
-          
-          {/* Текущая оценка */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginLeft: 16
-          }}>
-            <div style={{
-              backgroundColor: val > 0 ? '#e3f2fd' : '#f5f5f5',
-              color: val > 0 ? '#1976d2' : '#757575',
-              padding: '4px 12px',
-              borderRadius: 16,
-              fontSize: 14,
-              fontWeight: 600,
-              minWidth: 60,
-              textAlign: 'center'
-            }}>
-              {val}/5
-            </div>
-          </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={titleStyle}>
+          {item.name}
         </div>
         
-        {/* Описание навыка */}
+        {/* Текущий уровень с цветовой индикацией */}
+        <div style={{
+          display: "inline-flex",
+          alignItems: "center",
+          backgroundColor: getLevelColor(val),
+          color: "white",
+          padding: "4px 10px",
+          borderRadius: "12px",
+          fontSize: "12px",
+          fontWeight: "600",
+          marginBottom: item.description ? "8px" : "0"
+        }}>
+          <span style={{ marginRight: "6px" }}>{val}</span>
+          <span>{getLevelText(val)}</span>
+        </div>
+        
         {item.description && (
           <div>
-            <div 
-              style={{
-                color: "#666", 
-                fontSize: "14px", 
-                lineHeight: 1.5,
-                whiteSpace: "pre-wrap",
-                wordWrap: "break-word",
-                overflow: "hidden",
-                ...(needsExpansion && !isExpanded && {
-                  display: "-webkit-box",
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: "vertical",
-                })
-              }}
-              title={item.description}
-            >
+            <div style={descriptionStyle} title={item.description}>
               {item.description}
             </div>
             {needsExpansion && (
@@ -231,16 +175,18 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#007bff",
+                  color: "#3b82f6",
                   cursor: "pointer",
                   fontSize: "12px",
                   marginTop: "4px",
                   padding: "2px 0",
-                  textDecoration: "underline",
-                  fontWeight: 500
+                  textDecoration: "none",
+                  transition: "color 0.2s ease"
                 }}
                 onClick={() => setIsExpanded(!isExpanded)}
                 type="button"
+                onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
+                onMouseLeave={(e) => e.target.style.textDecoration = "none"}
               >
                 {isExpanded ? "↑ Свернуть" : "↓ Показать полностью"}
               </button>
@@ -249,52 +195,51 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
         )}
       </div>
       
-      {/* Описание текущего уровня */}
-      <div style={{
-        backgroundColor: '#f8f9fa',
-        padding: '8px 12px',
-        borderRadius: 6,
-        fontSize: 13,
-        color: '#495057',
-        marginBottom: 12,
-        border: '1px solid #e9ecef'
-      }}>
-        <strong>{currentLevel.label}:</strong> {currentLevel.description}
+      {/* Слайдер с улучшенным стилем */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+        <input
+          type="range"
+          min={0}
+          max={5}
+          step={1}
+          value={val}
+          style={sliderStyle}
+          onChange={(e) => handleValueChange(Number(e.target.value))}
+          aria-label={`Оценка для ${item.name}`}
+        />
+        <div style={{ fontSize: "11px", color: "#6b7280", fontWeight: "500" }}>
+          0 — 5
+        </div>
       </div>
       
-      {/* Оценочная шкала */}
-      <ScoreScale 
+      {/* Числовое поле с улучшенным стилем */}
+      <input
+        type="number"
+        min={0}
+        max={5}
         value={val}
-        onChange={handleValueChange}
-        skillName={item.name}
+        style={{
+          ...numberInputStyle,
+          borderColor: isDirty ? "#3b82f6" : "#e5e7eb",
+          boxShadow: isDirty ? "0 0 0 3px rgba(59, 130, 246, 0.1)" : "none"
+        }}
+        onChange={(e) => handleValueChange(Number(e.target.value))}
+        onFocus={(e) => {
+          e.target.style.borderColor = "#3b82f6";
+          e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.1)";
+        }}
+        onBlur={(e) => {
+          if (!isDirty) {
+            e.target.style.borderColor = "#e5e7eb";
+            e.target.style.boxShadow = "none";
+          }
+        }}
+        aria-label={`Числовая оценка для ${item.name}`}
       />
-      
-      {/* Дополнительная информация */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 12,
-        fontSize: 12,
-        color: '#6c757d'
-      }}>
-        <div>
-          {item.employeeName && (
-            <span>Сотрудник: <strong>{item.employeeName}</strong></span>
-          )}
-        </div>
-        <div>
-          {isDirty && (
-            <span style={{ color: '#007bff', fontWeight: 500 }}>
-              ⏳ Сохранение...
-            </span>
-          )}
-        </div>
-      </div>
     </div>
   );
 });
 
-ScoreRow.displayName = 'ScoreRow';
+OptimizedScoreRow.displayName = 'OptimizedScoreRow';
 
-export default ScoreRow;
+export default OptimizedScoreRow;
