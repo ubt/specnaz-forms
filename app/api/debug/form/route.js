@@ -16,24 +16,46 @@ export async function POST(req) {
       steps: []
     };
     
-    // Шаг 1: Проверка импортов
-    diagnostics.steps.push({ step: 1, name: "imports", status: "starting" });
+    // Шаг 1: Проверка окружения
+    diagnostics.steps.push({ step: 1, name: "environment", status: "starting" });
+    
+    const envCheck = {
+      NOTION_TOKEN: !!(process.env.NOTION_TOKEN),
+      MATRIX_DB_ID: !!(process.env.MATRIX_DB_ID),
+      EMPLOYEES_DB_ID: !!(process.env.EMPLOYEES_DB_ID),
+      JWT_SECRET: !!(process.env.JWT_SECRET)
+    };
+    
+    const allEnvGood = Object.values(envCheck).every(Boolean);
+    
+    diagnostics.steps.push({ 
+      step: 1, 
+      name: "environment", 
+      status: allEnvGood ? "success" : "error",
+      data: envCheck,
+      error: allEnvGood ? undefined : "Missing environment variables"
+    });
+    
+    if (!allEnvGood) {
+      return NextResponse.json(diagnostics, { status: 500 });
+    }
+    
+    // Шаг 2: Проверка импортов
+    diagnostics.steps.push({ step: 2, name: "imports", status: "starting" });
     
     try {
-      const tokenModule = await import("@/lib/token");
-      const notionModule = await import("@/lib/notion");
+      const { verifyReviewToken } = await import("@/lib/token");
+      const { notion } = await import("@/lib/notion");
+      
       diagnostics.steps.push({ 
-        step: 1, 
+        step: 2, 
         name: "imports", 
         status: "success",
-        exports: {
-          token: Object.keys(tokenModule),
-          notion: Object.keys(notionModule).slice(0, 10)
-        }
+        data: { tokenImport: true, notionImport: true }
       });
     } catch (error) {
       diagnostics.steps.push({ 
-        step: 1, 
+        step: 2, 
         name: "imports", 
         status: "error", 
         error: error.message 
@@ -41,14 +63,15 @@ export async function POST(req) {
       return NextResponse.json(diagnostics, { status: 500 });
     }
     
-    // Шаг 2: Проверка токена
-    diagnostics.steps.push({ step: 2, name: "token_verification", status: "starting" });
+    // Шаг 3: Проверка токена
+    diagnostics.steps.push({ step: 3, name: "token_verification", status: "starting" });
     
     try {
       const { verifyReviewToken } = await import("@/lib/token");
       const payload = await verifyReviewToken(token);
+      
       diagnostics.steps.push({ 
-        step: 2, 
+        step: 3, 
         name: "token_verification", 
         status: "success",
         payload: {
@@ -60,7 +83,7 @@ export async function POST(req) {
       });
     } catch (error) {
       diagnostics.steps.push({ 
-        step: 2, 
+        step: 3, 
         name: "token_verification", 
         status: "error", 
         error: error.message 
@@ -68,143 +91,76 @@ export async function POST(req) {
       return NextResponse.json(diagnostics, { status: 401 });
     }
     
-    // Шаг 3: Проверка баз данных
-    diagnostics.steps.push({ step: 3, name: "database_access", status: "starting" });
+    // Шаг 4: Проверка доступа к Notion
+    diagnostics.steps.push({ step: 4, name: "notion_access", status: "starting" });
     
     try {
-      const { notion, MATRIX_DB_ID, EMPLOYEES_DB_ID } = await import("@/lib/notion");
-      
-      // Проверяем доступ к базам данных
-      const matrixDb = await notion.databases.retrieve({ database_id: MATRIX_DB_ID });
-      const employeesDb = await notion.databases.retrieve({ database_id: EMPLOYEES_DB_ID });
-      
-      diagnostics.steps.push({ 
-        step: 3, 
-        name: "database_access", 
-        status: "success",
-        databases: {
-          matrix: {
-            title: matrixDb.title?.[0]?.plain_text || "Unknown",
-            properties: Object.keys(matrixDb.properties)
-          },
-          employees: {
-            title: employeesDb.title?.[0]?.plain_text || "Unknown", 
-            properties: Object.keys(employeesDb.properties)
-          }
-        }
-      });
-    } catch (error) {
-      diagnostics.steps.push({ 
-        step: 3, 
-        name: "database_access", 
-        status: "error", 
-        error: error.message 
-      });
-      return NextResponse.json(diagnostics, { status: 500 });
-    }
-    
-    // Шаг 4: Тест поиска сотрудников для оценки
-    diagnostics.steps.push({ step: 4, name: "evaluatees_search", status: "starting" });
-    
-    try {
-      const { verifyReviewToken } = await import("@/lib/token");
-      const { listEvaluateesForReviewerUser } = await import("@/lib/notion");
-      
-      const payload = await verifyReviewToken(token);
-      const employees = await listEvaluateesForReviewerUser(payload.reviewerUserId);
+      const { notion } = await import("@/lib/notion");
+      const user = await notion.users.me();
       
       diagnostics.steps.push({ 
         step: 4, 
-        name: "evaluatees_search", 
+        name: "notion_access", 
         status: "success",
         data: {
-          reviewerUserId: payload.reviewerUserId,
-          employeesFound: employees.length,
-          employees: employees.map(e => ({
-            id: e.employeeId,
-            name: e.employeeName,
-            role: e.role
-          }))
+          user_name: user.name || 'Unknown',
+          user_type: user.type
         }
       });
     } catch (error) {
       diagnostics.steps.push({ 
         step: 4, 
-        name: "evaluatees_search", 
+        name: "notion_access", 
         status: "error", 
         error: error.message,
-        stack: error.stack
+        status_code: error.status
       });
-      return NextResponse.json(diagnostics, { status: 500 });
     }
     
-    // Шаг 5: Тест загрузки навыков
-    diagnostics.steps.push({ step: 5, name: "skills_loading", status: "starting" });
+    // Шаг 5: Тест простого запроса к базе данных
+    diagnostics.steps.push({ step: 5, name: "database_test", status: "starting" });
     
     try {
-      const { verifyReviewToken } = await import("@/lib/token");
-      const { listEvaluateesForReviewerUser, fetchEmployeeSkillRowsForReviewerUser } = await import("@/lib/notion");
+      const { notion, MATRIX_DB_ID } = await import("@/lib/notion");
       
-      const payload = await verifyReviewToken(token);
-      const employees = await listEvaluateesForReviewerUser(payload.reviewerUserId);
+      const db = await notion.databases.retrieve({ database_id: MATRIX_DB_ID });
       
-      if (employees.length === 0) {
-        diagnostics.steps.push({ 
-          step: 5, 
-          name: "skills_loading", 
-          status: "skipped", 
-          reason: "No employees found" 
-        });
-      } else {
-        const skillGroups = await fetchEmployeeSkillRowsForReviewerUser(employees, payload.reviewerUserId);
-        
-        const totalSkills = skillGroups.reduce((sum, group) => sum + (group.items?.length || 0), 0);
-        
-        diagnostics.steps.push({ 
-          step: 5, 
-          name: "skills_loading", 
-          status: "success",
-          data: {
-            skillGroupsCount: skillGroups.length,
-            totalSkills,
-            skillGroups: skillGroups.map(group => ({
-              employeeName: group.employeeName,
-              role: group.role,
-              skillsCount: group.items?.length || 0,
-              skills: (group.items || []).slice(0, 3).map(skill => ({
-                name: skill.name,
-                pageId: skill.pageId.substring(0, 8) + "...",
-                current: skill.current
-              }))
-            }))
-          }
-        });
-      }
+      diagnostics.steps.push({ 
+        step: 5, 
+        name: "database_test", 
+        status: "success",
+        data: {
+          title: db.title?.[0]?.plain_text || "Unknown",
+          properties_count: Object.keys(db.properties).length,
+          some_properties: Object.keys(db.properties).slice(0, 5)
+        }
+      });
     } catch (error) {
       diagnostics.steps.push({ 
         step: 5, 
-        name: "skills_loading", 
+        name: "database_test", 
         status: "error", 
         error: error.message,
-        stack: error.stack
+        status_code: error.status
       });
-      return NextResponse.json(diagnostics, { status: 500 });
     }
     
     diagnostics.summary = {
       allStepsCompleted: diagnostics.steps.every(step => step.status === "success" || step.status === "skipped"),
       totalSteps: diagnostics.steps.length,
       successfulSteps: diagnostics.steps.filter(step => step.status === "success").length,
-      errors: diagnostics.steps.filter(step => step.status === "error")
+      errors: diagnostics.steps.filter(step => step.status === "error").map(step => step.error)
     };
     
     return NextResponse.json(diagnostics);
     
   } catch (error) {
+    console.error('[DEBUG FORM ERROR]', error);
+    
     return NextResponse.json({
       error: "Diagnostic failed",
       message: error.message,
-      stack: error.stack,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
