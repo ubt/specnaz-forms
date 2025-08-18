@@ -35,7 +35,7 @@ export async function GET(req, { params }) {
       fetchOptimizedSkillsForReviewer,
       getReviewerInfo
     } = notionModule;
-
+ 
     // Быстрая проверка токена
     console.log('[FORM API] ⏱️ Проверка токена...');
     const payload = await verifyReviewToken(token);
