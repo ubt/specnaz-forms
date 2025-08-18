@@ -10,152 +10,213 @@ export async function POST(req) {
       return NextResponse.json({ error: "Token required" }, { status: 400 });
     }
     
-    const diagnostics = {
+    console.log(`[FORM DEBUG] Debugging token: ${token.substring(0, 10)}...`);
+    
+    const diagnostic = {
       timestamp: new Date().toISOString(),
       token: token.substring(0, 10) + "...",
+      tokenLength: token.length,
       steps: []
     };
     
-    // Шаг 1: Проверка окружения
-    diagnostics.steps.push({ step: 1, name: "environment", status: "starting" });
-    
-    const envCheck = {
-      NOTION_TOKEN: !!(process.env.NOTION_TOKEN),
-      MATRIX_DB_ID: !!(process.env.MATRIX_DB_ID),
-      EMPLOYEES_DB_ID: !!(process.env.EMPLOYEES_DB_ID),
-      JWT_SECRET: !!(process.env.JWT_SECRET)
-    };
-    
-    const allEnvGood = Object.values(envCheck).every(Boolean);
-    
-    diagnostics.steps.push({ 
-      step: 1, 
-      name: "environment", 
-      status: allEnvGood ? "success" : "error",
-      data: envCheck,
-      error: allEnvGood ? undefined : "Missing environment variables"
-    });
-    
-    if (!allEnvGood) {
-      return NextResponse.json(diagnostics, { status: 500 });
-    }
-    
-    // Шаг 2: Проверка импортов
-    diagnostics.steps.push({ step: 2, name: "imports", status: "starting" });
+    // Шаг 1: Анализ структуры токена
+    diagnostic.steps.push({ step: 1, name: "token_structure", status: "starting" });
     
     try {
-      const { verifyReviewToken } = await import("@/lib/token");
-      const { notion } = await import("@/lib/notion");
+      const parts = token.split('.');
+      const structureAnalysis = {
+        totalParts: parts.length,
+        partsLengths: parts.map(p => p.length),
+        expectedParts: 3,
+        validStructure: parts.length === 3 && parts.every(p => p.length > 0)
+      };
       
-      diagnostics.steps.push({ 
-        step: 2, 
-        name: "imports", 
-        status: "success",
-        data: { tokenImport: true, notionImport: true }
+      // Попытка декодирования заголовка
+      try {
+        const header = JSON.parse(atob(parts[0]));
+        structureAnalysis.header = header;
+      } catch {
+        structureAnalysis.headerError = "Failed to decode header";
+      }
+      
+      // Попытка декодирования payload (без проверки подписи)
+      try {
+        const payload = JSON.parse(atob(parts[1]));
+        structureAnalysis.payload = {
+          reviewerUserId: payload.reviewerUserId,
+          role: payload.role,
+          exp: payload.exp,
+          teamName: payload.teamName
+        };
+      } catch {
+        structureAnalysis.payloadError = "Failed to decode payload";
+      }
+      
+      diagnostic.steps.push({
+        step: 1,
+        name: "token_structure",
+        status: structureAnalysis.validStructure ? "success" : "error",
+        data: structureAnalysis,
+        error: structureAnalysis.validStructure ? undefined : "Invalid JWT structure"
       });
+      
+      if (!structureAnalysis.validStructure) {
+        return NextResponse.json(diagnostic, { status: 400 });
+      }
+      
     } catch (error) {
-      diagnostics.steps.push({ 
-        step: 2, 
-        name: "imports", 
-        status: "error", 
-        error: error.message 
+      diagnostic.steps.push({
+        step: 1,
+        name: "token_structure",
+        status: "error",
+        error: error.message
       });
-      return NextResponse.json(diagnostics, { status: 500 });
+      return NextResponse.json(diagnostic, { status: 400 });
     }
     
-    // Шаг 3: Проверка токена
-    diagnostics.steps.push({ step: 3, name: "token_verification", status: "starting" });
+    // Шаг 2: Проверка переменных окружения
+    diagnostic.steps.push({ step: 2, name: "environment", status: "starting" });
+    
+    const envCheck = {
+      JWT_SECRET: !!(process.env.JWT_SECRET),
+      JWT_SECRET_length: process.env.JWT_SECRET?.length || 0,
+      NOTION_TOKEN: !!(process.env.NOTION_TOKEN),
+      MATRIX_DB_ID: !!(process.env.MATRIX_DB_ID),
+      EMPLOYEES_DB_ID: !!(process.env.EMPLOYEES_DB_ID)
+    };
+    
+    const criticalEnvMissing = !envCheck.JWT_SECRET || !envCheck.NOTION_TOKEN;
+    
+    diagnostic.steps.push({
+      step: 2,
+      name: "environment",
+      status: criticalEnvMissing ? "error" : "success",
+      data: envCheck,
+      error: criticalEnvMissing ? "Missing critical environment variables" : undefined
+    });
+    
+    if (criticalEnvMissing) {
+      return NextResponse.json(diagnostic, { status: 500 });
+    }
+    
+    // Шаг 3: Импорт модулей
+    diagnostic.steps.push({ step: 3, name: "imports", status: "starting" });
+    
+    try {
+      const tokenModule = await import("@/lib/token");
+      const notionModule = await import("@/lib/notion");
+      
+      diagnostic.steps.push({
+        step: 3,
+        name: "imports",
+        status: "success",
+        exports: {
+          token: Object.keys(tokenModule),
+          notion: Object.keys(notionModule).slice(0, 10)
+        }
+      });
+    } catch (error) {
+      diagnostic.steps.push({
+        step: 3,
+        name: "imports",
+        status: "error",
+        error: error.message
+      });
+      return NextResponse.json(diagnostic, { status: 500 });
+    }
+    
+    // Шаг 4: Верификация токена
+    diagnostic.steps.push({ step: 4, name: "token_verification", status: "starting" });
     
     try {
       const { verifyReviewToken } = await import("@/lib/token");
       const payload = await verifyReviewToken(token);
       
-      diagnostics.steps.push({ 
-        step: 3, 
-        name: "token_verification", 
+      diagnostic.steps.push({
+        step: 4,
+        name: "token_verification",
         status: "success",
         payload: {
           reviewerUserId: payload.reviewerUserId,
           role: payload.role,
           exp: payload.exp,
-          teamName: payload.teamName
+          teamName: payload.teamName,
+          isExpired: payload.exp && payload.exp < Math.floor(Date.now() / 1000),
+          expiresAt: payload.exp ? new Date(payload.exp * 1000).toISOString() : null
         }
       });
     } catch (error) {
-      diagnostics.steps.push({ 
-        step: 3, 
-        name: "token_verification", 
-        status: "error", 
-        error: error.message 
+      diagnostic.steps.push({
+        step: 4,
+        name: "token_verification",
+        status: "error",
+        error: error.message
       });
-      return NextResponse.json(diagnostics, { status: 401 });
+      
+      // Не возвращаем ошибку сразу, продолжаем диагностику
     }
     
-    // Шаг 4: Проверка доступа к Notion
-    diagnostics.steps.push({ step: 4, name: "notion_access", status: "starting" });
+    // Шаг 5: Проверка доступа к Notion (если токен валиден)
+    const tokenValid = diagnostic.steps.find(s => s.name === "token_verification")?.status === "success";
     
-    try {
-      const { notion } = await import("@/lib/notion");
-      const user = await notion.users.me();
+    if (tokenValid) {
+      diagnostic.steps.push({ step: 5, name: "notion_test", status: "starting" });
       
-      diagnostics.steps.push({ 
-        step: 4, 
-        name: "notion_access", 
-        status: "success",
-        data: {
-          user_name: user.name || 'Unknown',
-          user_type: user.type
-        }
-      });
-    } catch (error) {
-      diagnostics.steps.push({ 
-        step: 4, 
-        name: "notion_access", 
-        status: "error", 
-        error: error.message,
-        status_code: error.status
-      });
+      try {
+        const { notion } = await import("@/lib/notion");
+        const user = await notion.users.me();
+        
+        diagnostic.steps.push({
+          step: 5,
+          name: "notion_test",
+          status: "success",
+          data: {
+            user_name: user.name || 'Unknown',
+            user_type: user.type
+          }
+        });
+      } catch (error) {
+        diagnostic.steps.push({
+          step: 5,
+          name: "notion_test",
+          status: "error",
+          error: error.message,
+          status_code: error.status
+        });
+      }
     }
     
-    // Шаг 5: Тест простого запроса к базе данных
-    diagnostics.steps.push({ step: 5, name: "database_test", status: "starting" });
-    
-    try {
-      const { notion, MATRIX_DB_ID } = await import("@/lib/notion");
-      
-      const db = await notion.databases.retrieve({ database_id: MATRIX_DB_ID });
-      
-      diagnostics.steps.push({ 
-        step: 5, 
-        name: "database_test", 
-        status: "success",
-        data: {
-          title: db.title?.[0]?.plain_text || "Unknown",
-          properties_count: Object.keys(db.properties).length,
-          some_properties: Object.keys(db.properties).slice(0, 5)
-        }
-      });
-    } catch (error) {
-      diagnostics.steps.push({ 
-        step: 5, 
-        name: "database_test", 
-        status: "error", 
-        error: error.message,
-        status_code: error.status
-      });
-    }
-    
-    diagnostics.summary = {
-      allStepsCompleted: diagnostics.steps.every(step => step.status === "success" || step.status === "skipped"),
-      totalSteps: diagnostics.steps.length,
-      successfulSteps: diagnostics.steps.filter(step => step.status === "success").length,
-      errors: diagnostics.steps.filter(step => step.status === "error").map(step => step.error)
+    diagnostic.summary = {
+      allStepsCompleted: diagnostic.steps.every(step => step.status === "success" || step.status === "skipped"),
+      totalSteps: diagnostic.steps.length,
+      successfulSteps: diagnostic.steps.filter(step => step.status === "success").length,
+      errors: diagnostic.steps.filter(step => step.status === "error"),
+      recommendations: []
     };
     
-    return NextResponse.json(diagnostics);
+    // Добавляем рекомендации
+    if (diagnostic.summary.errors.length > 0) {
+      const tokenError = diagnostic.summary.errors.find(e => e.name === "token_verification");
+      if (tokenError) {
+        if (tokenError.error.includes("Invalid Compact JWS")) {
+          diagnostic.summary.recommendations.push("Токен поврежден или обрезан. Сгенерируйте новый токен в админ-панели.");
+        } else if (tokenError.error.includes("expired")) {
+          diagnostic.summary.recommendations.push("Токен истек. Сгенерируйте новый токен в админ-панели.");
+        } else if (tokenError.error.includes("JWT_SECRET")) {
+          diagnostic.summary.recommendations.push("Проблема с JWT_SECRET. Проверьте переменные окружения в Cloudflare Pages.");
+        }
+      }
+      
+      const envError = diagnostic.summary.errors.find(e => e.name === "environment");
+      if (envError) {
+        diagnostic.summary.recommendations.push("Настройте переменные окружения в Cloudflare Pages Dashboard.");
+      }
+    }
+    
+    return NextResponse.json(diagnostic);
     
   } catch (error) {
-    console.error('[DEBUG FORM ERROR]', error);
+    console.error('[FORM DEBUG ERROR]', error);
     
     return NextResponse.json({
       error: "Diagnostic failed",
