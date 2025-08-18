@@ -53,7 +53,7 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   const containerStyle = {
     display: "grid",
     gridTemplateColumns: "1fr auto auto",
-    alignItems: "start",
+    alignItems: "center", // было "start" — из-за этого элементы шли «вразнобой»
     padding: "20px 24px",
     borderBottom: "1px solid #e5e7eb",
     backgroundColor: isDirty ? "#f8fafc" : "transparent",
@@ -78,7 +78,7 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
     lineHeight: 1.6,
     whiteSpace: "pre-wrap",
     wordWrap: "break-word",
-    maxWidth: "none", // Убираем ограничения ширины
+    maxWidth: "none",
     width: "100%",
     marginTop: "8px",
     padding: "12px",
@@ -110,7 +110,7 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
     fontWeight: "700",
     color: "#374151",
     transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-    alignSelf: "center"
+    alignSelf: "center" // поле остаётся по центру — теперь слайдер тоже
   };
 
   // Цветовая индикация уровня
@@ -141,7 +141,7 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   return (
     <div style={containerStyle}>
       {/* Информация о навыке с ШИРОКИМ описанием */}
-      <div style={{ minWidth: 0, width: "100%" }}>
+      <div style={{ minWidth: 0, width: "100%", alignSelf: "start" }}>
         <div style={titleStyle}>
           {item.name}
         </div>
@@ -172,7 +172,15 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
       </div>
       
       {/* Слайдер с улучшенным стилем */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "8px",
+          alignSelf: "center" // добавлено: центрируем всю колонку слайдера
+        }}
+      >
         <input
           type="range"
           min={0}
