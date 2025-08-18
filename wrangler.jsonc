@@ -1,6 +1,13 @@
-name = "notion-skills-assessment"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
-
-[env.production]
-# Переменные окружения будут добавлены через Cloudflare Dashboard
+{
+  "name": "notion-review-app",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": ".vercel/output/static",
+  
+  // Настройки для лучшей совместимости с Edge Runtime
+  "limits": {
+    "cpu_ms": 50000
+  }
+  
+  // Удаляем vars секцию, так как переменные уже настроены в Cloudflare Dashboard
+} 
