@@ -59,7 +59,7 @@ const EmptyState = ({ reviewerInfo }) => (
     </div>
   </div>
 );
-
+ 
 // Хук для работы с данными формы
 function useFormData(token) {
   const [state, setState] = useState({
