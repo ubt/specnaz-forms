@@ -199,6 +199,46 @@ export default function DiagnosticPage() {
     }
   };
 
+  const testFullSkillsLoad = async () => {
+    if (!testToken.trim()) {
+      alert('Сначала введите токен в поле выше');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const res = await fetch('/api/debug/test-skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: testToken.trim() })
+      });
+
+      const data = await res.json();
+      
+      setResults({
+        fullSkillsTest: {
+          status: res.ok && data.summary?.success ? 'pass' : 'fail',
+          data,
+          token: testToken.substring(0, 10) + '...'
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      setResults({
+        fullSkillsTest: {
+          status: 'fail',
+          error: error.message,
+          token: testToken.substring(0, 10) + '...'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'pass': return '#28a745';
@@ -322,7 +362,7 @@ export default function DiagnosticPage() {
       </div>
 
       {/* Тест загрузки навыка */}
-      <div style={{ marginBottom: 32, padding: 16, border: '1px solid #e9ecef', borderRadius: 8 }}>
+      <div style={{ marginBottom: 16, padding: 16, border: '1px solid #e9ecef', borderRadius: 8 }}>
         <h3 style={{ marginBottom: 12, fontSize: 16 }}>📋 Тест загрузки навыка</h3>
         <button
           onClick={testSkillLoad}
@@ -334,10 +374,34 @@ export default function DiagnosticPage() {
             border: 'none',
             borderRadius: 4,
             cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: 14
+            fontSize: 14,
+            marginRight: 12
           }}
         >
           Тестировать навык
+        </button>
+      </div>
+
+      {/* Полный тест загрузки навыков */}
+      <div style={{ marginBottom: 32, padding: 16, border: '1px solid #e9ecef', borderRadius: 8 }}>
+        <h3 style={{ marginBottom: 12, fontSize: 16 }}>🎯 Полный тест загрузки навыков</h3>
+        <p style={{ fontSize: 14, color: '#666', marginBottom: 12 }}>
+          Тестирует весь процесс: поиск сотрудников → загрузка навыков
+        </p>
+        <button
+          onClick={testFullSkillsLoad}
+          disabled={loading || !testToken.trim()}
+          style={{
+            padding: '8px 16px',
+            background: loading || !testToken.trim() ? '#6c757d' : '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: 4,
+            cursor: loading || !testToken.trim() ? 'not-allowed' : 'pointer',
+            fontSize: 14
+          }}
+        >
+          Полный тест навыков
         </button>
       </div>
 
@@ -566,13 +630,14 @@ export default function DiagnosticPage() {
             </div>
           )}
 
-          {/* Тест навыка */}
-          {results.skillTest && (
+          {/* Полный тест навыков */}
+          {results.fullSkillsTest && (
             <div style={{
               background: 'white',
               border: '1px solid #dee2e6',
               borderRadius: 6,
-              padding: 16
+              padding: 16,
+              marginBottom: 12
             }}>
               <div style={{
                 display: 'flex',
@@ -580,23 +645,23 @@ export default function DiagnosticPage() {
                 marginBottom: 8
               }}>
                 <span style={{ marginRight: 8, fontSize: 18 }}>
-                  {getStatusIcon(results.skillTest.status)}
+                  {getStatusIcon(results.fullSkillsTest.status)}
                 </span>
-                <strong>Тест навыка ({results.skillTest.skillId})</strong>
+                <strong>Полный тест навыков ({results.fullSkillsTest.token})</strong>
                 <span style={{
                   marginLeft: 'auto',
                   padding: '2px 8px',
                   borderRadius: 4,
                   fontSize: 12,
                   fontWeight: 600,
-                  background: results.skillTest.status === 'pass' ? '#d4edda' : '#f8d7da',
-                  color: results.skillTest.status === 'pass' ? '#155724' : '#721c24'
+                  background: results.fullSkillsTest.status === 'pass' ? '#d4edda' : '#f8d7da',
+                  color: results.fullSkillsTest.status === 'pass' ? '#155724' : '#721c24'
                 }}>
-                  {results.skillTest.status === 'pass' ? 'ЗАГРУЖЕН' : 'ОШИБКА'}
+                  {results.fullSkillsTest.status === 'pass' ? 'УСПЕШНО' : 'ОШИБКА'}
                 </span>
               </div>
               
-              {results.skillTest.error && (
+              {results.fullSkillsTest.error && (
                 <div style={{
                   background: '#fff3cd',
                   border: '1px solid #ffeaa7',
@@ -606,14 +671,34 @@ export default function DiagnosticPage() {
                   color: '#856404',
                   marginBottom: 8
                 }}>
-                  Ошибка: {results.skillTest.error}
+                  Ошибка: {results.fullSkillsTest.error}
                 </div>
               )}
               
-              {results.skillTest.data && (
+              {results.fullSkillsTest.data?.summary && (
+                <div style={{
+                  background: results.fullSkillsTest.data.summary.success ? '#d4edda' : '#fff3cd',
+                  border: `1px solid ${results.fullSkillsTest.data.summary.success ? '#c3e6cb' : '#ffeaa7'}`,
+                  padding: 8,
+                  borderRadius: 4,
+                  fontSize: 12,
+                  color: results.fullSkillsTest.data.summary.success ? '#155724' : '#856404',
+                  marginBottom: 8
+                }}>
+                  <strong>Результат:</strong> {results.fullSkillsTest.data.summary.message}
+                  {results.fullSkillsTest.data.summary.totalSkills !== undefined && (
+                    <div>Навыков найдено: {results.fullSkillsTest.data.summary.totalSkills}</div>
+                  )}
+                  {results.fullSkillsTest.data.summary.totalEmployees !== undefined && (
+                    <div>Сотрудников: {results.fullSkillsTest.data.summary.totalEmployees}</div>
+                  )}
+                </div>
+              )}
+              
+              {results.fullSkillsTest.data && (
                 <details style={{ fontSize: 12 }}>
                   <summary style={{ cursor: 'pointer', marginBottom: 8 }}>
-                    Данные навыка
+                    Детальные результаты
                   </summary>
                   <pre style={{
                     background: '#f1f3f4',
@@ -624,7 +709,7 @@ export default function DiagnosticPage() {
                     lineHeight: 1.4,
                     maxHeight: 400
                   }}>
-                    {JSON.stringify(results.skillTest.data, null, 2)}
+                    {JSON.stringify(results.fullSkillsTest.data, null, 2)}
                   </pre>
                 </details>
               )}
@@ -682,4 +767,4 @@ export default function DiagnosticPage() {
       </div>
     </main>
   );
-} 
+}
