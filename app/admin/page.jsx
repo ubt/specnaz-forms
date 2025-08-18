@@ -70,12 +70,13 @@ export default function OptimizedAdmin() {
     setLoading(true);
     setProgress(0);
     
-    // Анимация прогресса
-    let p = 0;
+    // Плавная анимация прогресса
+    const start = Date.now();
     const timer = setInterval(() => {
-      p = Math.min(90, p + Math.random() * 8);
-      setProgress(p);
-    }, 200);
+      const elapsed = Date.now() - start;
+      const pct = Math.min(95, (elapsed / 4000) * 95);
+      setProgress(pct);
+    }, 100);
 
     try {
       const requestData = {
