@@ -2,58 +2,11 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 
-// Безопасный импорт с обработкой ошибок
-async function safeImport(moduleName) {
-  try {
-    console.log(`[SAFE IMPORT] Попытка импорта ${moduleName}`);
-    const module = await import(moduleName);
-    console.log(`[SAFE IMPORT] Успешно импортирован ${moduleName}`);
-    return module;
-  } catch (error) {
-    console.error(`[SAFE IMPORT] Ошибка импорта ${moduleName}:`, {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-    throw new Error(`Ошибка импорта модуля: ${moduleName} - ${error.message}`);
-  }
-}
-
-// Проверка окружения
-function validateRuntimeEnvironment() {
-  const checks = {
-    hasTextEncoder: typeof TextEncoder !== 'undefined',
-    hasGlobalThis: typeof globalThis !== 'undefined',
-    hasProcess: typeof process !== 'undefined',
-    hasEnvVars: !!(process?.env?.NOTION_TOKEN && process?.env?.JWT_SECRET && process?.env?.MATRIX_DB_ID),
-    runtime: 'edge'
-  };
-  
-  console.log('[ENV CHECK] Проверка среды выполнения:', checks);
-  
-  if (!checks.hasEnvVars) {
-    console.error('[ENV CHECK] Отсутствуют переменные окружения:', {
-      NOTION_TOKEN: !!process?.env?.NOTION_TOKEN,
-      JWT_SECRET: !!process?.env?.JWT_SECRET,
-      MATRIX_DB_ID: !!process?.env?.MATRIX_DB_ID,
-      EMPLOYEES_DB_ID: !!process?.env?.EMPLOYEES_DB_ID
-    });
-    throw new Error('Отсутствуют обязательные переменные окружения');
-  }
-  
-  return checks;
-}
-
-// GET - ИСПРАВЛЕННАЯ загрузка списка навыков для оценки
+// GET - загрузка списка навыков для оценки
 export async function GET(req, { params }) {
   try {
     console.log('[FORM GET] ===== Начало обработки запроса =====');
     
-    // Проверка среды выполнения
-    const envCheck = validateRuntimeEnvironment();
-    console.log('[FORM GET] Проверка окружения пройдена');
-    
-    // Проверяем параметры
     const { token } = params;
     if (!token) {
       console.error('[FORM GET] Токен не предоставлен');
@@ -65,57 +18,40 @@ export async function GET(req, { params }) {
     
     console.log(`[FORM GET] Обработка токена: ${token.substring(0, 10)}...`);
     
-    // Безопасный импорт модулей с детальным логированием
+    // Импорт модулей
     let tokenModule, notionModule;
     
     try {
-      console.log('[FORM GET] Начинаем импорт модулей...');
-      
-      // Импорт token модуля
-      console.log('[FORM GET] Импорт token модуля...');
-      tokenModule = await safeImport("@/lib/token");
-      console.log('[FORM GET] Token модуль импортирован успешно, экспорты:', Object.keys(tokenModule));
-      
-      // Импорт notion модуля
-      console.log('[FORM GET] Импорт notion модуля...');
-      notionModule = await safeImport("@/lib/notion");
-      console.log('[FORM GET] Notion модуль импортирован успешно, экспорты:', Object.keys(notionModule));
-      
-      console.log('[FORM GET] Все модули импортированы успешно');
+      console.log('[FORM GET] Импорт модулей...');
+      tokenModule = await import("@/lib/token");
+      notionModule = await import("@/lib/notion");
+      console.log('[FORM GET] Модули импортированы успешно');
     } catch (importError) {
-      console.error('[FORM GET] Ошибка импорта модулей:', {
-        message: importError.message,
-        stack: importError.stack,
-        envCheck
-      });
+      console.error('[FORM GET] Ошибка импорта модулей:', importError.message);
       return NextResponse.json(
         { 
           success: false,
           error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? {
-            importError: importError.message,
-            envCheck,
-            moduleName: importError.message.includes('token') ? '@/lib/token' : '@/lib/notion'
-          } : "Проверьте логи сервера"
+          details: importError.message
         }, 
         { status: 500 }
       );
     }
     
-    // Проверяем что все нужные экспорты доступны
+    // Проверяем что все нужные функции доступны
     const { verifyReviewToken } = tokenModule;
     const { 
       listEvaluateesForReviewerUser, 
       fetchEmployeeSkillRowsForReviewerUser,
-      getEmployeeNamesByUserIds,
-      PerformanceTracker 
+      getEmployeeNamesByUserIds
     } = notionModule;
     
     if (!verifyReviewToken) {
       console.error('[FORM GET] verifyReviewToken не найден в token модуле');
       return NextResponse.json({ 
         success: false, 
-        error: "Ошибка конфигурации: verifyReviewToken не найден" 
+        error: "Ошибка конфигурации: verifyReviewToken не найден",
+        available: Object.keys(tokenModule)
       }, { status: 500 });
     }
     
@@ -123,7 +59,8 @@ export async function GET(req, { params }) {
       console.error('[FORM GET] Обязательные функции не найдены в notion модуле');
       return NextResponse.json({ 
         success: false, 
-        error: "Ошибка конфигурации: функции Notion не найдены" 
+        error: "Ошибка конфигурации: функции Notion не найдены",
+        available: Object.keys(notionModule)
       }, { status: 500 });
     }
     
@@ -134,20 +71,14 @@ export async function GET(req, { params }) {
       payload = await verifyReviewToken(token);
       console.log('[FORM GET] Токен верифицирован успешно:', { 
         reviewerUserId: payload.reviewerUserId,
-        role: payload.role,
-        exp: payload.exp 
+        role: payload.role 
       });
     } catch (tokenError) {
-      console.error('[FORM GET] Ошибка верификации токена:', {
-        message: tokenError.message,
-        stack: tokenError.stack
-      });
-      
+      console.error('[FORM GET] Ошибка верификации токена:', tokenError.message);
       return NextResponse.json(
         { 
           success: false,
-          error: "Недействительный или истёкший токен",
-          details: process.env.NODE_ENV === 'development' ? tokenError.message : "Запросите новую ссылку у администратора"
+          error: "Недействительный или истёкший токен"
         }, 
         { status: 401 }
       );
@@ -156,59 +87,50 @@ export async function GET(req, { params }) {
     const { reviewerUserId, role } = payload;
     
     if (!reviewerUserId) {
-      console.error('[FORM GET] Отсутствует reviewerUserId в токене:', payload);
+      console.error('[FORM GET] Отсутствует reviewerUserId в токене');
       return NextResponse.json(
         { success: false, error: "Некорректный токен: отсутствует ID ревьюера" }, 
         { status: 400 }
       );
     }
 
-    // ПОЛУЧЕНИЕ ИНФОРМАЦИИ О РЕВЬЮЕРЕ (упрощенная версия)
-    let reviewerInfo = { name: `Ревьюер ${reviewerUserId.substring(0, 8)}`, userId: reviewerUserId };
+    // Получение информации о ревьюере (упрощенная версия)
+    let reviewerInfo = { 
+      name: `Ревьюер ${reviewerUserId.substring(0, 8)}`, 
+      userId: reviewerUserId,
+      role: role || 'peer'
+    };
     
     try {
-      console.log(`[FORM GET] Загрузка информации о ревьюере: ${reviewerUserId}`);
+      console.log(`[FORM GET] Попытка загрузить имя ревьюера: ${reviewerUserId}`);
       
-      // Попытка получить имя из базы сотрудников
       if (getEmployeeNamesByUserIds) {
         const nameMap = await getEmployeeNamesByUserIds([reviewerUserId]);
         if (nameMap && nameMap.has(reviewerUserId)) {
           reviewerInfo.name = nameMap.get(reviewerUserId);
-          console.log(`[FORM GET] Найдено имя в базе сотрудников: ${reviewerInfo.name}`);
+          console.log(`[FORM GET] ✅ Найдено имя в базе сотрудников: ${reviewerInfo.name}`);
         } else {
           console.log(`[FORM GET] Имя не найдено в базе сотрудников, используем fallback`);
         }
       }
     } catch (reviewerError) {
-      console.warn('[FORM GET] Ошибка загрузки информации о ревьюере, используем fallback:', reviewerError.message);
+      console.warn('[FORM GET] Ошибка загрузки информации о ревьюере:', reviewerError.message);
     }
     
     // Загрузка сотрудников для оценки
     console.log(`[FORM GET] Загрузка сотрудников для ревьюера: ${reviewerUserId}`);
-    PerformanceTracker?.start('load-evaluatees');
     
     let employees;
     try {
       employees = await listEvaluateesForReviewerUser(reviewerUserId);
-      const duration = PerformanceTracker?.end('load-evaluatees') || 0;
-      console.log(`[FORM GET] Найдено ${employees?.length || 0} сотрудников для оценки (${duration}ms)`);
+      console.log(`[FORM GET] ✅ Найдено ${employees?.length || 0} сотрудников для оценки`);
     } catch (error) {
-      PerformanceTracker?.end('load-evaluatees');
-      console.error('[FORM GET] Ошибка загрузки сотрудников:', {
-        message: error.message,
-        stack: error.stack,
-        reviewerUserId
-      });
-      
+      console.error('[FORM GET] Ошибка загрузки сотрудников:', error.message);
       return NextResponse.json(
         { 
           success: false,
           error: "Ошибка загрузки списка сотрудников для оценки",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            reviewerUserId,
-            suggestion: "Проверьте настройки матрицы компетенций в Notion"
-          } : "Проверьте настройки матрицы компетенций"
+          details: error.message
         }, 
         { status: 500 }
       );
@@ -221,12 +143,7 @@ export async function GET(req, { params }) {
           success: false,
           error: "Нет сотрудников для оценки",
           reviewerInfo,
-          suggestion: "Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе",
-          details: {
-            reviewerUserId,
-            searchedFor: 'employees to evaluate',
-            hint: "Проверьте поля P1_peer, P2_peer, Manager_scorer, Self_scorer в матрице компетенций"
-          }
+          suggestion: "Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе"
         }, 
         { status: 404 }
       );
@@ -234,33 +151,18 @@ export async function GET(req, { params }) {
     
     // Загрузка навыков
     console.log('[FORM GET] Загрузка данных навыков...');
-    PerformanceTracker?.start('load-skills');
     
     let skillGroups;
     try {
       skillGroups = await fetchEmployeeSkillRowsForReviewerUser(employees, reviewerUserId);
-      const duration = PerformanceTracker?.end('load-skills') || 0;
-      console.log(`[FORM GET] Загружены навыки для ${skillGroups?.length || 0} сотрудников (${duration}ms)`);
+      console.log(`[FORM GET] ✅ Загружены навыки для ${skillGroups?.length || 0} сотрудников`);
     } catch (error) {
-      PerformanceTracker?.end('load-skills');
-      console.error('[FORM GET] Ошибка загрузки навыков:', {
-        message: error.message,
-        stack: error.stack,
-        employeeCount: employees.length,
-        reviewerUserId
-      });
-      
+      console.error('[FORM GET] Ошибка загрузки навыков:', error.message);
       return NextResponse.json(
         { 
           success: false,
           error: "Ошибка загрузки навыков",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            employeeCount: employees.length,
-            reviewerUserId,
-            employees: employees.map(e => ({ id: e.employeeId, name: e.employeeName, role: e.role })),
-            suggestion: "Проверьте поле 'Навык' в матрице компетенций и связи с базой навыков"
-          } : "Проверьте настройки навыков в матрице компетенций"
+          details: error.message
         }, 
         { status: 500 }
       );
@@ -299,28 +201,20 @@ export async function GET(req, { params }) {
         }
       }
       
-      console.log(`[FORM GET] Успешно подготовлено ${totalSkills} навыков для ${employees.length} сотрудников`);
+      console.log(`[FORM GET] ✅ Успешно подготовлено ${totalSkills} навыков для ${employees.length} сотрудников`);
     } catch (error) {
-      console.error('[FORM GET] Ошибка обработки данных навыков:', {
-        message: error.message,
-        stack: error.stack,
-        skillGroupsCount: skillGroups?.length || 0
-      });
-      
+      console.error('[FORM GET] Ошибка обработки данных навыков:', error.message);
       return NextResponse.json(
         { 
           success: false,
           error: "Ошибка обработки данных навыков",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            skillGroupsCount: skillGroups?.length || 0
-          } : undefined
+          details: error.message
         }, 
         { status: 500 }
       );
     }
     
-    // ИСПРАВЛЕННАЯ структура ответа с обязательным полем success
+    // Формируем правильную структуру ответа
     const response = {
       success: true,
       data: {
@@ -328,7 +222,7 @@ export async function GET(req, { params }) {
         reviewerInfo: {
           name: reviewerInfo.name,
           userId: reviewerInfo.userId,
-          role: role || 'peer'
+          role: reviewerInfo.role
         },
         stats: {
           totalEmployees: employees.length,
@@ -342,34 +236,13 @@ export async function GET(req, { params }) {
       }
     };
     
-    // Добавляем предупреждения и диагностическую информацию
+    // Добавляем предупреждения если необходимо
     if (totalSkills === 0) {
       response.warning = "Не найдено навыков для оценки. Проверьте настройки матрицы компетенций.";
-      console.warn('[FORM GET] Не найдены навыки для оценки');
-      
-      // Диагностическая информация для отладки
-      response.debug = {
-        employees: employees.map(e => ({ 
-          id: e.employeeId, 
-          name: e.employeeName, 
-          role: e.role 
-        })),
-        skillGroups: skillGroups ? skillGroups.map(g => ({ 
-          employeeId: g.employeeId, 
-          employeeName: g.employeeName, 
-          role: g.role,
-          itemsCount: g.items?.length || 0,
-          items: g.items?.slice(0, 3).map(i => ({ name: i.name, pageId: i.pageId })) || []
-        })) : [],
-        suggestions: [
-          "Проверьте что в матрице компетенций заполнены поля P1_peer, P2_peer, Manager_scorer для ваших сотрудников",
-          "Убедитесь что поле 'Навык' в матрице правильно связано с базой навыков",
-          "Проверьте что поле 'Описание навыка' заполнено в записях матрицы"
-        ]
-      };
+      console.warn('[FORM GET] ⚠️ Не найдены навыки для оценки');
     } else if (totalSkills < 5) {
       response.warning = `Найдено только ${totalSkills} навыков. Возможно, не все данные загружены.`;
-      console.warn(`[FORM GET] Низкое количество навыков: ${totalSkills}`);
+      console.warn(`[FORM GET] ⚠️ Низкое количество навыков: ${totalSkills}`);
     }
     
     console.log('[FORM GET] ===== Запрос завершён успешно =====');
@@ -379,85 +252,47 @@ export async function GET(req, { params }) {
     console.error('[FORM GET КРИТИЧЕСКАЯ ОШИБКА]', {
       error: error.message,
       stack: error.stack,
-      timestamp: new Date().toISOString(),
-      token: params?.token?.substring(0, 10) + '...',
-      userAgent: req.headers.get('user-agent')
+      timestamp: new Date().toISOString()
     });
-    
-    // Специальная обработка известных ошибок
-    let errorMessage = "Внутренняя ошибка сервера";
-    let statusCode = 500;
-    let details = undefined;
-    
-    if (error.message?.includes('Отсутствуют обязательные переменные окружения')) {
-      errorMessage = "Конфигурация сервера неполная";
-      details = "Проверьте переменные окружения в Cloudflare Pages";
-    } else if (error.message?.includes('Ошибка импорта модуля')) {
-      errorMessage = "Ошибка загрузки модулей";
-      details = process.env.NODE_ENV === 'development' ? error.message : "Проверьте структуру проекта";
-    } else if (error.message?.includes('TextEncoder')) {
-      errorMessage = "Ошибка совместимости среды выполнения";
-      details = "Проблема с Edge Runtime";
-    } else if (error.status === 429) {
-      errorMessage = "Слишком много запросов. Попробуйте через минуту.";
-      statusCode = 429;
-    } else if (error instanceof ReferenceError || error instanceof TypeError) {
-      console.error('[FORM GET] Обнаружена ошибка JavaScript:', error.message);
-      errorMessage = process.env.NODE_ENV === 'development' 
-        ? `Ошибка кода: ${error.message}` 
-        : "Внутренняя ошибка сервера";
-      details = process.env.NODE_ENV === 'development' ? {
-        type: error.constructor.name,
-        originalError: error.message
-      } : undefined;
-    }
     
     return NextResponse.json(
       { 
         success: false,
-        error: errorMessage,
-        details,
-        timestamp: new Date().toISOString(),
-        ...(process.env.NODE_ENV === 'development' && { 
-          debug: {
-            originalError: error.message,
-            stack: error.stack.split('\n').slice(0, 5).join('\n'),
-            type: error.constructor.name
-          }
-        })
+        error: "Внутренняя ошибка сервера",
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        timestamp: new Date().toISOString()
       }, 
-      { status: statusCode }
+      { status: 500 }
     );
   }
 }
 
-// POST - сохранение оценок (БЕЗ ИЗМЕНЕНИЙ)
+// POST - сохранение оценок
 export async function POST(req, { params }) {
   try {
     console.log('[FORM POST] Начало обработки запроса');
     
     const { token } = params;
     
-    // Безопасный импорт модулей
+    // Импорт модулей
     let tokenModule, notionModule;
     
     try {
-      tokenModule = await safeImport("@/lib/token");
-      notionModule = await safeImport("@/lib/notion");
+      tokenModule = await import("@/lib/token");
+      notionModule = await import("@/lib/notion");
     } catch (importError) {
       console.error('[FORM POST] Ошибка импорта модулей:', importError.message);
       return NextResponse.json(
         { 
           success: false,
-          error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? importError.message : undefined
+          error: "Ошибка загрузки модулей сервера"
         }, 
         { status: 500 }
       );
     }
     
     const { verifyReviewToken } = tokenModule;
-    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
+    const { updateScore, ROLE_TO_FIELD } = notionModule;
     
     // Проверка токена
     let payload;
@@ -512,8 +347,7 @@ export async function POST(req, { params }) {
     const scoreField = ROLE_TO_FIELD[role] || ROLE_TO_FIELD.peer;
     console.log(`[FORM POST] Использование поля оценки: ${scoreField}`);
     
-    // Batch обновление
-    PerformanceTracker?.start('batch-update');
+    // Последовательное обновление для избежания "too many subrequests"
     const results = [];
     const errors = [];
     
@@ -525,11 +359,16 @@ export async function POST(req, { params }) {
           item.pageId, 
           scoreField, 
           item.value, 
-          "", // Убираем комментарии
-          null // Не обновляем поле комментариев
+          "", // Комментарий
+          null // Поле комментария
         );
         
         results.push({ pageId: item.pageId, success: true });
+        
+        // Небольшая задержка между запросами для избежания rate limiting
+        if (index < items.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
         
       } catch (error) {
         console.error(`[FORM POST] Ошибка обновления ${item.pageId}:`, error.message);
@@ -545,9 +384,7 @@ export async function POST(req, { params }) {
       }
     }
     
-    PerformanceTracker?.end('batch-update');
-    
-    console.log(`[FORM POST] Batch обновление завершено: ${results.length} успешно, ${errors.length} ошибок`);
+    console.log(`[FORM POST] ✅ Обновление завершено: ${results.length} успешно, ${errors.length} ошибок`);
     
     const response = {
       success: true,
@@ -588,9 +425,7 @@ export async function POST(req, { params }) {
     return NextResponse.json(
       { 
         success: false,
-        error: process.env.NODE_ENV === 'development' 
-          ? `Ошибка обновления: ${error.message}` 
-          : "Ошибка сохранения данных"
+        error: "Ошибка сохранения данных"
       }, 
       { status: 500 }
     );
