@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import ScoreRow from '@/components/ScoreRow';
+import FixedScoreRow from '@/components/ScoreRow';
 
 // Компонент загрузки
 const LoadingSpinner = () => (
@@ -9,7 +9,7 @@ const LoadingSpinner = () => (
     <div className="text-center">
       <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto"></div>
       <p className="mt-6 text-gray-700 text-lg">Загружаем данные для оценки...</p>
-      <p className="mt-2 text-gray-500 text-sm">Это может занять несколько секунд</p>
+      <p className="mt-2 text-gray-500 text-sm">Загружаем всех сотрудников и все навыки</p>
     </div>
   </div>
 );
@@ -89,7 +89,6 @@ function useFormData(token) {
       const result = await response.json();
       console.log('✅ Данные получены:', result);
 
-      // ИСПРАВЛЕНО: Проверяем правильную структуру ответа
       if (!result.success) {
         throw new Error(result.error || 'Не удалось получить данные');
       }
@@ -152,7 +151,6 @@ function useFormData(token) {
 
       if (result.success) {
         alert(`✅ Успешно сохранено ${result.updated} оценок!`);
-        // Очищаем оценки после успешного сохранения
         setState(prev => ({ ...prev, scores: new Map() }));
       } else {
         throw new Error('Сервер вернул неуспешный статус');
@@ -181,7 +179,7 @@ function useFormData(token) {
 }
 
 // Главный компонент
-export default function OptimizedSkillAssessmentForm({ params }) {
+export default function ImprovedSkillAssessmentForm({ params }) {
   const { token } = params;
   const { data, loading, error, scores, saving, updateScore, saveScores, retryLoad } = useFormData(token);
 
@@ -226,7 +224,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* ИСПРАВЛЕННЫЙ заголовок с информацией о ревьюере */}
+        {/* Заголовок с диагностикой роли */}
         <div className="bg-white rounded-xl shadow-lg p-8 mb-8 border border-gray-200">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -237,7 +235,10 @@ export default function OptimizedSkillAssessmentForm({ params }) {
                 Здравствуйте, <span className="font-semibold text-blue-600">{reviewerInfo?.name || 'Ревьюер'}</span>!
               </p>
               <p className="text-gray-600">
-                Оцените навыки коллег по шкале от 0 до 5, где 5 — экспертный уровень
+                Ваша роль: <span className="font-semibold text-green-600">{reviewerInfo?.role || 'peer'}</span>
+              </p>
+              <p className="text-gray-600 mt-1">
+                Оцените навыки коллег по шкале от 0 до 5
               </p>
             </div>
             
@@ -246,7 +247,13 @@ export default function OptimizedSkillAssessmentForm({ params }) {
                 <div className="text-sm text-gray-600 space-y-1">
                   <div><strong>Всего навыков:</strong> {stats?.totalSkills || 0}</div>
                   <div><strong>Сотрудников:</strong> {stats?.totalEmployees || 0}</div>
-                  <div><strong>Оценено:</strong> {scores.size}</div>    
+                  <div><strong>Оценено:</strong> {scores.size}</div>
+                  <div><strong>Поле сохранения:</strong> <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                    {reviewerInfo?.role === 'self' ? 'Self_score' : 
+                     reviewerInfo?.role === 'manager' ? 'Manager_score' :
+                     reviewerInfo?.role === 'p1_peer' ? 'P1_score' :
+                     reviewerInfo?.role === 'p2_peer' ? 'P2_score' : 'P1_score'}
+                  </span></div>
                 </div>
               </div>
             </div>
@@ -256,7 +263,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
               <span>Прогресс оценки</span>
-              <span> {scores.size} из {stats?.totalSkills || 0}</span>
+              <span>{scores.size} из {stats?.totalSkills || 0}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
@@ -273,12 +280,12 @@ export default function OptimizedSkillAssessmentForm({ params }) {
         {stats?.employees && stats.employees.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              👥 Сотрудники для оценки ({stats.employees.length}):
+              👥 Сотрудники для оценки ({stats.employees.length})
             </h3>
             <div className="flex flex-wrap gap-3">
               {stats.employees.map((emp, index) => (
                 <div key={index} className="bg-gray-100 px-3 py-2 rounded-lg text-sm">
-                  <strong>{emp.name} - </strong> 
+                  <strong>{emp.name}</strong> 
                   <span className="text-gray-600 ml-2">({emp.role})</span>
                 </div>
               ))}
@@ -286,7 +293,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
           </div>
         )}
 
-        {/* Список навыков по сотрудникам */}
+        {/* Список навыков по сотрудникам с широким описанием */}
         <div className="space-y-8">
           {groupEntries.map(([key, group]) => (
             <div key={key} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
@@ -301,7 +308,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
               
               <div className="divide-y divide-gray-200">
                 {group.skills.map((skill) => (
-                  <ScoreRow
+                  <FixedScoreRow
                     key={skill.pageId}
                     item={{
                       pageId: skill.pageId,
@@ -327,6 +334,12 @@ export default function OptimizedSkillAssessmentForm({ params }) {
               </p>
               <p className="text-sm text-gray-600 mt-1">
                 Оценено {scores.size} из {stats?.totalSkills || 0} навыков
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Оценки будут сохранены в поле: {reviewerInfo?.role === 'self' ? 'Self_score' : 
+                 reviewerInfo?.role === 'manager' ? 'Manager_score' :
+                 reviewerInfo?.role === 'p1_peer' ? 'P1_score' :
+                 reviewerInfo?.role === 'p2_peer' ? 'P2_score' : 'P1_score'}
               </p>
             </div>
             
@@ -357,13 +370,22 @@ export default function OptimizedSkillAssessmentForm({ params }) {
           )}
         </div>
 
-        {/* Дополнительная информация для разработчика */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-6 text-center text-xs text-gray-500">
+        {/* Debug информация для разработки */}
+        {process.env.NODE_ENV === 'development' && data && (
+          <div className="mt-6 bg-gray-100 p-4 rounded-lg">
             <details>
-              <summary className="cursor-pointer">Debug Info</summary>
-              <pre className="mt-2 text-left bg-gray-100 p-2 rounded text-xs">
-                {JSON.stringify({ reviewerInfo, stats }, null, 2)}
+              <summary className="cursor-pointer font-medium">Debug Info</summary>
+              <pre className="mt-2 text-xs bg-white p-2 rounded overflow-auto">
+                {JSON.stringify({ 
+                  reviewerInfo, 
+                  stats,
+                  roleMapping: {
+                    self: 'Self_score',
+                    manager: 'Manager_score',  
+                    p1_peer: 'P1_score',
+                    p2_peer: 'P2_score'
+                  }
+                }, null, 2)}
               </pre>
             </details>
           </div>
