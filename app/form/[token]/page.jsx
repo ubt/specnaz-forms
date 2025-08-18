@@ -3,558 +3,367 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ScoreRow from '@/components/ScoreRow';
 
-/**
- * Компонент отображения состояний загрузки, ошибок и пустых данных 
- */
-const StateHandler = ({ 
-  loading = false, 
-  error = null, 
-  empty = false, 
-  onRetry = () => {},
-  children 
-}) => {
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        fontFamily: 'system-ui, sans-serif'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            border: '4px solid #f3f3f3',
-            borderTop: '4px solid #007bff',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 16px'
-          }}></div>
-          <p style={{ color: '#666', margin: 0 }}>Загрузка навыков для оценки...</p>
-        </div>
-        <style jsx>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
+// Компонент загрузки
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-50">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto"></div>
+      <p className="mt-6 text-gray-700 text-lg">Загружаем данные для оценки...</p>
+      <p className="mt-2 text-gray-500 text-sm">Это может занять несколько секунд</p>
+    </div>
+  </div>
+);
+
+// Компонент ошибки
+const ErrorDisplay = ({ error, onRetry }) => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-50">
+    <div className="text-center max-w-lg p-8">
+      <div className="text-red-500 text-6xl mb-6">⚠️</div>
+      <h3 className="text-2xl font-semibold text-gray-800 mb-4">
+        Ошибка загрузки данных
+      </h3>
+      <p className="text-gray-600 mb-6 leading-relaxed">{error}</p>
+      <button
+        onClick={onRetry}
+        className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 shadow-md"
+      >
+        Попробовать снова
+      </button>
+      <p className="mt-4 text-sm text-gray-500">
+        Если проблема повторяется, обратитесь к администратору
+      </p>
+    </div>
+  </div>
+);
+
+// Компонент пустого состояния
+const EmptyState = ({ reviewerInfo }) => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-50">
+    <div className="text-center max-w-lg p-8">
+      <div className="text-gray-400 text-6xl mb-6">📋</div>
+      <h3 className="text-2xl font-semibold text-gray-800 mb-4">
+        Навыки для оценки не найдены
+      </h3>
+      <p className="text-gray-600 mb-4">
+        Здравствуйте, <strong>{reviewerInfo?.name || 'Ревьюер'}</strong>!
+      </p>
+      <p className="text-gray-600 leading-relaxed">
+        В данный момент нет навыков, которые вам необходимо оценить. 
+        Возможно, все оценки уже завершены или данные ещё не настроены в системе.
+      </p>
+      <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <p className="text-sm text-blue-800">
+          💡 Если вы ожидали увидеть навыки для оценки, обратитесь к администратору для проверки настроек матрицы компетенций.
+        </p>
       </div>
-    );
-  }
+    </div>
+  </div>
+);
 
-  if (error) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        fontFamily: 'system-ui, sans-serif',
-        padding: 20
-      }}>
-        <div style={{ 
-          textAlign: 'center', 
-          maxWidth: 500,
-          background: '#fff',
-          padding: 32,
-          borderRadius: 12,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          border: '1px solid #e1e5e9'
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <h3 style={{ 
-            fontSize: 20, 
-            fontWeight: 600, 
-            color: '#2c3e50', 
-            marginBottom: 12,
-            margin: 0
-          }}>
-            Ошибка загрузки данных
-          </h3>
-          <p style={{ 
-            color: '#666', 
-            marginBottom: 20,
-            lineHeight: 1.5,
-            margin: '12px 0 20px 0'
-          }}>
-            {error}
-          </p>
-          <button
-            onClick={onRetry}
-            style={{
-              background: '#007bff',
-              color: 'white',
-              padding: '12px 24px',
-              border: 'none',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-              transition: 'background-color 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#0056b3'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#007bff'}
-          >
-            Попробовать снова
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (empty) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        fontFamily: 'system-ui, sans-serif',
-        padding: 20
-      }}>
-        <div style={{ 
-          textAlign: 'center', 
-          maxWidth: 500,
-          background: '#fff',
-          padding: 32,
-          borderRadius: 12,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          border: '1px solid #e1e5e9'
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16, color: '#6c757d' }}>📋</div>
-          <h3 style={{ 
-            fontSize: 20, 
-            fontWeight: 600, 
-            color: '#2c3e50', 
-            marginBottom: 12,
-            margin: 0
-          }}>
-            Навыки не найдены
-          </h3>
-          <p style={{ 
-            color: '#666', 
-            margin: '12px 0 0 0',
-            lineHeight: 1.5
-          }}>
-            Проверьте конфигурацию оценки или обратитесь к администратору
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return children;
-};
-
-/**
- * Кастомный хук для управления данными навыков
- */
-function useSkillsData(token) {
+// Хук для работы с данными формы
+function useFormData(token) {
   const [state, setState] = useState({
-    rows: [],
+    data: null,
     loading: true,
     error: null,
-    stats: null
+    scores: new Map(),
+    saving: false
   });
 
-  // Функция загрузки данных
-  const fetchSkills = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
-      console.log('[FORM] Начинаем загрузку данных для токена:', token?.substring(0, 10) + '...');
+      console.log('🔄 Загружаем данные для токена:', token?.substring(0, 10) + '...');
       
       const response = await fetch(`/api/form/${token}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' }
       });
 
-      console.log('[FORM] Статус ответа:', response.status);
-      
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch {
-          errorData = { error: `HTTP ${response.status}: Ошибка сервера` };
-        }
-        
-        throw new Error(
-          errorData.error || `HTTP ${response.status}: Ошибка сервера`
-        );
+        const errorData = await response.json().catch(() => ({ error: 'Неизвестная ошибка сервера' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('[FORM] Получен ответ от API:', {
-        rowsCount: result.rows?.length,
-        stats: result.stats,
-        hasWarning: !!result.warning
-      });
+      console.log('✅ Данные получены:', result);
 
-      if (!result.rows || !Array.isArray(result.rows)) {
-        throw new Error('API вернул некорректный формат данных: отсутствует массив rows');
+      if (!result.success) {
+        throw new Error(result.error || 'Не удалось получить данные');
       }
 
-      console.log(`[FORM] Загружено ${result.rows.length} навыков`);
-      
-      setState(prev => ({ 
-        ...prev, 
-        rows: result.rows,
-        stats: result.stats,
+      setState(prev => ({
+        ...prev,
+        data: result.data,
         loading: false,
         error: null
       }));
-      
+
     } catch (error) {
-      console.error('[FORM] Ошибка загрузки навыков:', error);
-      setState(prev => ({ 
-        ...prev, 
-        error: error.message, 
+      console.error('❌ Ошибка загрузки:', error);
+      setState(prev => ({
+        ...prev,
+        error: error.message,
         loading: false,
-        rows: []
+        data: null
       }));
     }
   }, [token]);
 
-  // Загружаем данные при монтировании или изменении токена 
-  useEffect(() => {
-    if (token) {
-      fetchSkills();
-    }
-  }, [token, fetchSkills]);
-
-  return {
-    ...state,
-    refetch: fetchSkills
-  };
-}
-
-/**
- * Главный компонент формы оценки навыков
- */
-export default function SkillsAssessmentForm({ params }) {
-  const { token } = params;
-  const [scores, setScores] = useState(new Map());
-  const [submitting, setSubmitting] = useState(false);
-  const [submitMessage, setSubmitMessage] = useState('');
-  
-  // Используем кастомный хук для управления данными
-  const {
-    rows,
-    loading,
-    error,
-    stats,
-    refetch
-  } = useSkillsData(token);
-
-  // Группировка навыков по сотрудникам
-  const groupedSkills = useMemo(() => {
-    if (!rows.length) return {};
-    
-    return rows.reduce((acc, row) => {
-      const key = `${row.employeeId}_${row.employeeName}`;
-      if (!acc[key]) {
-        acc[key] = {
-          employeeId: row.employeeId,
-          employeeName: row.employeeName,
-          role: row.role,
-          items: []
-        };
-      }
-      acc[key].items.push(row);
-      return acc;
-    }, {});
-  }, [rows]);
-
-  // Обработчик изменения оценки
-  const handleScoreChange = useCallback((pageId, scoreData) => {
-    setScores(prev => {
-      const newScores = new Map(prev);
-      newScores.set(pageId, scoreData);
-      return newScores;
+  const updateScore = useCallback((pageId, data) => {
+    setState(prev => {
+      const newScores = new Map(prev.scores);
+      newScores.set(pageId, data);
+      return { ...prev, scores: newScores };
     });
   }, []);
 
-  // Функция отправки формы
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    
-    if (scores.size === 0) {
-      setSubmitMessage('❌ Необходимо оценить хотя бы один навык');
+  const saveScores = useCallback(async () => {
+    if (state.scores.size === 0) {
+      alert('Необходимо оценить хотя бы один навык');
       return;
     }
 
-    setSubmitting(true);
-    setSubmitMessage('');
-    
+    setState(prev => ({ ...prev, saving: true }));
+
     try {
-      const items = Array.from(scores.entries()).map(([pageId, scoreData]) => ({
+      const items = Array.from(state.scores.entries()).map(([pageId, data]) => ({
         pageId,
-        value: scoreData.value
+        value: data.value
       }));
 
-      console.log('[FORM] Отправка оценок:', { count: items.length, token: token?.substring(0, 10) + '...' });
-      
+      console.log('💾 Сохраняем оценки:', items.length, 'элементов');
+
       const response = await fetch(`/api/form/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          items,
-          mode: 'final'
-        })
+        body: JSON.stringify({ items, mode: 'final' })
       });
 
-      const result = await response.json();
-      
       if (!response.ok) {
-        throw new Error(result.error || 'Ошибка отправки данных');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Ошибка сохранения');
       }
-      
-      if (result.ok) {
-        setSubmitMessage(`✅ Успешно обновлено ${result.updated} оценок!`);
-        
-        if (result.failed > 0) {
-          setSubmitMessage(prev => prev + ` (${result.failed} ошибок)`);
-        }
+
+      const result = await response.json();
+      console.log('✅ Сохранение завершено:', result);
+
+      if (result.success) {
+        alert(`✅ Успешно сохранено ${result.updated} оценок!`);
+        // Очищаем оценки после успешного сохранения
+        setState(prev => ({ ...prev, scores: new Map() }));
       } else {
-        throw new Error(result.message || 'Неизвестная ошибка');
+        throw new Error('Сервер вернул неуспешный статус');
       }
-      
+
     } catch (error) {
-      console.error('[FORM] Ошибка отправки:', error);
-      setSubmitMessage(`❌ Ошибка отправки: ${error.message}`);
+      console.error('❌ Ошибка сохранения:', error);
+      alert(`❌ Ошибка сохранения: ${error.message}`);
     } finally {
-      setSubmitting(false);
+      setState(prev => ({ ...prev, saving: false }));
     }
-  }, [scores, token]);
+  }, [state.scores, token]);
+
+  useEffect(() => {
+    if (token) {
+      loadData();
+    }
+  }, [token, loadData]);
+
+  return {
+    ...state,
+    updateScore,
+    saveScores,
+    retryLoad: loadData
+  };
+}
+
+// Главный компонент
+export default function OptimizedSkillAssessmentForm({ params }) {
+  const { token } = params;
+  const { data, loading, error, scores, saving, updateScore, saveScores, retryLoad } = useFormData(token);
+
+  // Группировка навыков по сотрудникам
+  const groupedSkills = useMemo(() => {
+    if (!data?.rows) return {};
+    
+    const groups = {};
+    for (const row of data.rows) {
+      const key = `${row.employeeId}_${row.employeeName}`;
+      if (!groups[key]) {
+        groups[key] = {
+          employeeName: row.employeeName,
+          employeeId: row.employeeId,
+          role: row.role,
+          skills: []
+        };
+      }
+      groups[key].skills.push(row);
+    }
+    
+    return groups;
+  }, [data?.rows]);
+
+  // Обработчики состояний
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (error) {
+    return <ErrorDisplay error={error} onRetry={retryLoad} />;
+  }
+
+  if (!data?.rows?.length) {
+    return <EmptyState reviewerInfo={data?.reviewerInfo} />;
+  }
+
+  const reviewerInfo = data.reviewerInfo;
+  const stats = data.stats;
+  const groupEntries = Object.entries(groupedSkills);
 
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      background: '#f8f9fa',
-      fontFamily: 'system-ui, sans-serif'
-    }}>
-      <StateHandler 
-        loading={loading} 
-        error={error} 
-        empty={rows.length === 0}
-        onRetry={refetch}
-      >
-        <div style={{ 
-          maxWidth: 1000, 
-          margin: '0 auto', 
-          padding: 24 
-        }}>
-          {/* Заголовок */}
-          <div style={{
-            background: '#fff',
-            borderRadius: 12,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            padding: 24,
-            marginBottom: 24,
-            border: '1px solid #e1e5e9'
-          }}>
-            <h1 style={{ 
-              fontSize: 28, 
-              fontWeight: 700, 
-              color: '#2c3e50', 
-              marginBottom: 12,
-              margin: 0
-            }}>
-              📊 Форма оценки компетенций
-            </h1>
-            <p style={{ 
-              color: '#6c757d', 
-              marginBottom: 16,
-              fontSize: 16,
-              margin: '12px 0 16px 0'
-            }}>
-              Оцените навыки сотрудников по шкале от 0 до 5
-            </p>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Заголовок с информацией о ревьюере */}
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-8 border border-gray-200">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                📋 Форма оценки компетенций
+              </h1>
+              <p className="text-lg text-gray-600 mb-4">
+                Здравствуйте, <span className="font-semibold text-blue-600">{reviewerInfo?.name || 'Ревьюер'}</span>!
+              </p>
+              <p className="text-gray-600">
+                Оцените навыки коллег по шкале от 0 до 5, где 5 — экспертный уровень
+              </p>
+            </div>
             
-            {stats && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                gap: 16,
-                padding: 16,
-                background: '#f8f9fa',
-                borderRadius: 8,
-                fontSize: 14,
-                color: '#495057'
-              }}>
-                <div>
-                  <strong>Сотрудников:</strong> {stats.totalEmployees}
-                </div>
-                <div>
-                  <strong>Навыков:</strong> {stats.totalSkills}
-                </div>
-                <div>
-                  <strong>Роль:</strong> {stats.reviewerRole}
-                </div>
-                <div>
-                  <strong>Оценено:</strong> {scores.size} из {rows.length}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Форма */}
-          <form onSubmit={handleSubmit}>
-            {Object.values(groupedSkills).map((group) => (
-              <div 
-                key={`${group.employeeId}_${group.employeeName}`}
-                style={{
-                  background: '#fff',
-                  borderRadius: 12,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  marginBottom: 24,
-                  overflow: 'hidden',
-                  border: '1px solid #e1e5e9'
-                }}
-              >
-                {/* Заголовок сотрудника */}
-                <div style={{
-                  background: '#f8f9fa',
-                  padding: '16px 24px',
-                  borderBottom: '1px solid #e1e5e9'
-                }}>
-                  <h2 style={{ 
-                    fontSize: 18, 
-                    fontWeight: 600, 
-                    color: '#2c3e50',
-                    margin: 0
-                  }}>
-                    👤 {group.employeeName}
-                    <span style={{
-                      marginLeft: 12,
-                      fontSize: 14,
-                      fontWeight: 400,
-                      color: '#6c757d',
-                      background: '#e9ecef',
-                      padding: '2px 8px',
-                      borderRadius: 4
-                    }}>
-                      {group.role}
-                    </span>
-                  </h2>
-                </div>
-
-                {/* Навыки */}
-                <div style={{ padding: '8px 0' }}>
-                  {group.items.map((item) => (
-                    <ScoreRow
-                      key={item.pageId}
-                      item={item}
-                      onChange={(scoreData) => handleScoreChange(item.pageId, scoreData)}
-                      hideComment={true}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {/* Панель отправки */}
-            <div style={{
-              background: '#fff',
-              borderRadius: 12,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              padding: 24,
-              border: '1px solid #e1e5e9',
-              position: 'sticky',
-              bottom: 24
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 16
-              }}>
-                <div>
-                  <div style={{ marginBottom: 8, color: '#495057' }}>
-                    Прогресс: {scores.size} из {rows.length} навыков оценено
-                  </div>
-                  <div style={{
-                    width: 200,
-                    height: 8,
-                    background: '#e9ecef',
-                    borderRadius: 4,
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${rows.length > 0 ? (scores.size / rows.length) * 100 : 0}%`,
-                      height: '100%',
-                      background: scores.size === rows.length ? '#28a745' : '#007bff',
-                      transition: 'width 0.3s ease'
-                    }}></div>
-                  </div>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  {submitMessage && (
-                    <div style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      fontSize: 14,
-                      fontWeight: 500,
-                      background: submitMessage.includes('✅') ? '#d4edda' : '#f8d7da',
-                      color: submitMessage.includes('✅') ? '#155724' : '#721c24',
-                      border: `1px solid ${submitMessage.includes('✅') ? '#c3e6cb' : '#f5c6cb'}`
-                    }}>
-                      {submitMessage}
-                    </div>
-                  )}
-                  
-                  <button
-                    type="submit"
-                    disabled={submitting || scores.size === 0}
-                    style={{
-                      background: submitting || scores.size === 0 ? '#6c757d' : '#007bff',
-                      color: 'white',
-                      padding: '12px 24px',
-                      border: 'none',
-                      borderRadius: 8,
-                      fontSize: 16,
-                      fontWeight: 600,
-                      cursor: submitting || scores.size === 0 ? 'not-allowed' : 'pointer',
-                      transition: 'background-color 0.2s ease',
-                      minWidth: 140
-                    }}
-                  >
-                    {submitting ? 'Отправка...' : 'Отправить оценки'}
-                  </button>
+            <div className="mt-6 lg:mt-0 lg:text-right">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+                <div className="text-sm text-gray-600 space-y-1">
+                  <div><strong>Всего навыков:</strong> {stats?.totalSkills || 0}</div>
+                  <div><strong>Сотрудников:</strong> {stats?.totalEmployees || 0}</div>
+                  <div><strong>Оценено:</strong> {scores.size}</div>
+                  <div><strong>Ваша роль:</strong> {reviewerInfo?.role || 'peer'}</div>
                 </div>
               </div>
             </div>
-          </form>
+          </div>
 
-          {/* Дополнительная информация */}
-          <div style={{
-            marginTop: 32,
-            padding: 16,
-            background: '#e7f3ff',
-            border: '1px solid #b8daff',
-            borderRadius: 8,
-            fontSize: 14,
-            color: '#004085'
-          }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600 }}>
-              ℹ️ Инструкция
-            </h4>
-            <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6 }}>
-              <li>Используйте шкалу от 0 до 5 для оценки каждого навыка</li>
-              <li>0 - навык отсутствует, 5 - экспертный уровень</li>
-              <li>Все изменения сохраняются автоматически при отправке формы</li>
-              <li>Для завершения оценки нажмите кнопку "Отправить оценки"</li>
-            </ul>
+          {/* Прогресс-бар */}
+          <div className="mt-6">
+            <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <span>Прогресс оценки</span>
+              <span>{scores.size} из {stats?.totalSkills || 0}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-300"
+                style={{ 
+                  width: `${stats?.totalSkills ? (scores.size / stats.totalSkills) * 100 : 0}%` 
+                }}
+              />
+            </div>
           </div>
         </div>
-      </StateHandler>
+
+        {/* Информация о сотрудниках */}
+        {stats?.employees && stats.employees.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              👥 Сотрудники для оценки ({stats.employees.length})
+            </h3>
+            <div className="flex flex-wrap gap-3">
+              {stats.employees.map((emp, index) => (
+                <div key={index} className="bg-gray-100 px-3 py-2 rounded-lg text-sm">
+                  <strong>{emp.name}</strong> 
+                  <span className="text-gray-600 ml-2">({emp.role})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Список навыков по сотрудникам */}
+        <div className="space-y-8">
+          {groupEntries.map(([key, group]) => (
+            <div key={key} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800">
+                  👤 {group.employeeName}
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Роль: {group.role} • Навыков: {group.skills.length}
+                </p>
+              </div>
+              
+              <div className="divide-y divide-gray-200">
+                {group.skills.map((skill) => (
+                  <ScoreRow
+                    key={skill.pageId}
+                    item={{
+                      pageId: skill.pageId,
+                      name: skill.name,
+                      description: skill.description,
+                      current: skill.current
+                    }}
+                    onChange={(data) => updateScore(skill.pageId, data)}
+                    hideComment={true}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Кнопка сохранения */}
+        <div className="mt-8 bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <p className="text-gray-700 font-medium">
+                Готовы отправить оценки?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                Оценено {scores.size} из {stats?.totalSkills || 0} навыков
+              </p>
+            </div>
+            
+            <button
+              onClick={saveScores}
+              disabled={saving || scores.size === 0}
+              className={`px-8 py-3 rounded-lg font-semibold text-white transition-all duration-200 shadow-md ${
+                saving || scores.size === 0
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transform hover:scale-105'
+              }`}
+            >
+              {saving ? (
+                <span className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Сохраняем...
+                </span>
+              ) : (
+                `💾 Сохранить оценки (${scores.size})`
+              )}
+            </button>
+          </div>
+          
+          {scores.size === 0 && (
+            <p className="text-amber-600 text-sm mt-3 bg-amber-50 p-3 rounded-lg border border-amber-200">
+              ⚠️ Необходимо оценить хотя бы один навык перед сохранением
+            </p>
+          )}
+        </div>
+
+        {/* Дополнительная информация */}
+        {stats?.loadTimeMs && (
+          <div className="mt-6 text-center text-xs text-gray-500">
+            Данные загружены за {stats.loadTimeMs} мс
+          </div>
+        )}
+      </div>
     </div>
   );
 }
