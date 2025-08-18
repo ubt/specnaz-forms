@@ -377,7 +377,7 @@ export async function GET(req, { params }) {
   }
 }
 
-// POST - сохранение оценок (упрощенная версия)
+// POST - сохранение оценок
 export async function POST(req, { params }) {
   try {
     console.log('[FORM POST] Starting request processing');
