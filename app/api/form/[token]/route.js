@@ -2,11 +2,21 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 
+// Карта модулей для явного импорта (решает проблемы сборки на Edge)
+const moduleMap = {
+  "@/lib/token": () => import("@/lib/token"),
+  "@/lib/notion": () => import("@/lib/notion")
+};
+
 // Безопасный импорт с обработкой ошибок
 async function safeImport(moduleName) {
+  const importer = moduleMap[moduleName];
+  if (!importer) {
+    throw new Error(`Неизвестный модуль: ${moduleName}`);
+  }
   try {
     console.log(`[SAFE IMPORT] Попытка импорта ${moduleName}`);
-    const module = await import(moduleName);
+    const module = await importer();
     console.log(`[SAFE IMPORT] Успешно импортирован ${moduleName}`);
     return module;
   } catch (error) {
