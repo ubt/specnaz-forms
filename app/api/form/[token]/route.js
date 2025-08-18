@@ -1,541 +1,281 @@
-export const runtime = "edge";
+// Используем Edge Runtime для совместимости с Cloudflare Pages 
+export const runtime = 'edge'; 
 
-import { NextResponse } from "next/server";
-
-// Безопасный импорт с обработкой ошибок
-async function safeImport(moduleName) {
-  try {
-    console.log(`[SAFE IMPORT] Attempting to import ${moduleName}`);
-    const module = await import(moduleName);
-    console.log(`[SAFE IMPORT] Successfully imported ${moduleName}`);
-    return module;
-  } catch (error) {
-    console.error(`[SAFE IMPORT] Failed to import ${moduleName}:`, {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-    throw new Error(`Module import failed: ${moduleName} - ${error.message}`);
-  }
-}
-
-// Проверка окружения
-function validateRuntimeEnvironment() {
-  const checks = {
-    hasTextEncoder: typeof TextEncoder !== 'undefined',
-    hasGlobalThis: typeof globalThis !== 'undefined',
-    hasProcess: typeof process !== 'undefined',
-    hasEnvVars: !!(process?.env?.NOTION_TOKEN && process?.env?.JWT_SECRET),
-    runtime: 'edge'
+/**
+ * Трансформирует данные от Notion API в простой формат для фронтенда
+ */
+function transformNotionPage(page) {
+  const properties = page.properties;
+  const transformed = {
+    id: page.id,
+    createdTime: page.created_time,
+    lastEditedTime: page.last_edited_time
   };
-  
-  console.log('[ENV CHECK] Runtime environment:', checks);
-  
-  if (!checks.hasEnvVars) {
-    throw new Error('Missing required environment variables');
-  }
-  
-  return checks;
+
+  // Обрабатываем различные типы свойств Notion
+  Object.entries(properties).forEach(([key, property]) => {
+    switch (property.type) {
+      case 'title':
+        transformed[key] = property.title?.[0]?.plain_text || '';
+        break;
+      case 'rich_text':
+        transformed[key] = property.rich_text
+          .map(text => text.plain_text)
+          .join('');
+        break;
+      case 'multi_select':
+        transformed[key] = property.multi_select.map(option => option.name);
+        break;
+      case 'select':
+        transformed[key] = property.select?.name || null;
+        break;
+      case 'status':
+        transformed[key] = property.status?.name || null;
+        break;
+      case 'number':
+        transformed[key] = property.number;
+        break;
+      case 'checkbox':
+        transformed[key] = property.checkbox;
+        break;
+      case 'relation':
+        transformed[key] = property.relation.map(rel => rel.id);
+        break;
+      case 'people':
+        transformed[key] = property.people.map(person => ({
+          id: person.id,
+          name: person.name,
+          avatar_url: person.avatar_url
+        }));
+        break;
+      default:
+        transformed[key] = property[property.type];
+    }
+  });
+
+  return transformed;
 }
 
-// GET - загрузка списка навыков для оценки
-export async function GET(req, { params }) {
-  try {
-    console.log('[FORM GET] ===== Starting request processing =====');
-    
-    // Проверка среды выполнения
-    const envCheck = validateRuntimeEnvironment();
-    console.log('[FORM GET] Environment validation passed');
-    
-    // Проверяем параметры
-    const { token } = params;
-    if (!token) {
-      console.error('[FORM GET] No token provided');
-      return NextResponse.json(
-        { error: "Токен не предоставлен" }, 
-        { status: 400 }
-      );
-    }
-    
-    console.log(`[FORM GET] Processing token: ${token.substring(0, 10)}...`);
-    
-    // Безопасный импорт модулей с детальным логированием
-    let tokenModule, notionModule;
-    
-    try {
-      console.log('[FORM GET] Starting module imports...');
-      
-      // Импорт token модуля
-      console.log('[FORM GET] Importing token module...');
-      tokenModule = await safeImport("@/lib/token");
-      console.log('[FORM GET] Token module imported successfully, exports:', Object.keys(tokenModule));
-      
-      // Импорт notion модуля
-      console.log('[FORM GET] Importing notion module...');
-      notionModule = await safeImport("@/lib/notion");
-      console.log('[FORM GET] Notion module imported successfully, exports:', Object.keys(notionModule));
-      
-      console.log('[FORM GET] All modules imported successfully');
-    } catch (importError) {
-      console.error('[FORM GET] Module import failed:', {
-        message: importError.message,
-        stack: importError.stack,
-        envCheck
-      });
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? {
-            importError: importError.message,
-            envCheck,
-            moduleName: importError.message.includes('token') ? '@/lib/token' : '@/lib/notion'
-          } : "Проверьте логи сервера"
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    // Проверяем что все нужные экспорты доступны
-    const { verifyReviewToken } = tokenModule;
-    const { 
-      listEvaluateesForReviewerUser, 
-      fetchEmployeeSkillRowsForReviewerUser,
-      PerformanceTracker 
-    } = notionModule;
-    
-    if (!verifyReviewToken) {
-      console.error('[FORM GET] verifyReviewToken not found in token module');
-      return NextResponse.json({ error: "Ошибка конфигурации: verifyReviewToken не найден" }, { status: 500 });
-    }
-    
-    if (!listEvaluateesForReviewerUser || !fetchEmployeeSkillRowsForReviewerUser) {
-      console.error('[FORM GET] Required functions not found in notion module');
-      return NextResponse.json({ error: "Ошибка конфигурации: функции Notion не найдены" }, { status: 500 });
-    }
-    
-    // Проверка токена
-    let payload;
-    try {
-      console.log('[FORM GET] Verifying token...');
-      payload = await verifyReviewToken(token);
-      console.log('[FORM GET] Token verified successfully:', { 
-        reviewerUserId: payload.reviewerUserId,
-        role: payload.role,
-        exp: payload.exp 
-      });
-    } catch (tokenError) {
-      console.error('[FORM GET] Token verification failed:', {
-        message: tokenError.message,
-        stack: tokenError.stack
-      });
-      
-      return NextResponse.json(
-        { 
-          error: "Недействительный или истёкший токен",
-          details: process.env.NODE_ENV === 'development' ? tokenError.message : "Запросите новую ссылку у администратора"
-        }, 
-        { status: 401 }
-      );
-    }
-    
-    const { reviewerUserId, role } = payload;
-    
-    if (!reviewerUserId) {
-      console.error('[FORM GET] No reviewerUserId in token payload:', payload);
-      return NextResponse.json(
-        { error: "Некорректный токен: отсутствует ID ревьюера" }, 
-        { status: 400 }
-      );
-    }
-    
-    // Загрузка сотрудников для оценки
-    console.log(`[FORM GET] Loading evaluatees for reviewer: ${reviewerUserId}`);
-    PerformanceTracker?.start('load-evaluatees');
-    
-    let employees;
-    try {
-      employees = await listEvaluateesForReviewerUser(reviewerUserId);
-      const duration = PerformanceTracker?.end('load-evaluatees') || 0;
-      console.log(`[FORM GET] Found ${employees?.length || 0} employees for evaluation (${duration}ms)`);
-    } catch (error) {
-      PerformanceTracker?.end('load-evaluatees');
-      console.error('[FORM GET] Failed to load evaluatees:', {
-        message: error.message,
-        stack: error.stack,
-        reviewerUserId
-      });
-      
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки списка сотрудников для оценки",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            reviewerUserId,
-            suggestion: "Проверьте настройки матрицы компетенций в Notion"
-          } : "Проверьте настройки матрицы компетенций"
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    if (!employees?.length) {
-      console.warn(`[FORM GET] No employees found for reviewer: ${reviewerUserId}`);
-      return NextResponse.json(
-        { 
-          error: "Нет сотрудников для оценки",
-          suggestion: "Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе",
-          details: {
-            reviewerUserId,
-            searchedFor: 'employees to evaluate',
-            hint: "Проверьте поля P1_peer, P2_peer, Manager_scorer, Self_scorer в матрице компетенций"
-          }
-        }, 
-        { status: 404 }
-      );
-    }
-    
-    // Загрузка навыков
-    console.log('[FORM GET] Loading skills data...');
-    PerformanceTracker?.start('load-skills');
-    
-    let skillGroups;
-    try {
-      skillGroups = await fetchEmployeeSkillRowsForReviewerUser(employees, reviewerUserId);
-      const duration = PerformanceTracker?.end('load-skills') || 0;
-      console.log(`[FORM GET] Loaded skills for ${skillGroups?.length || 0} employees (${duration}ms)`);
-    } catch (error) {
-      PerformanceTracker?.end('load-skills');
-      console.error('[FORM GET] Failed to load skills:', {
-        message: error.message,
-        stack: error.stack,
-        employeeCount: employees.length,
-        reviewerUserId
-      });
-      
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки навыков",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            employeeCount: employees.length,
-            reviewerUserId,
-            employees: employees.map(e => ({ id: e.employeeId, name: e.employeeName, role: e.role })),
-            suggestion: "Проверьте поле 'Навык' в матрице компетенций и связи с базой навыков"
-          } : "Проверьте настройки навыков в матрице компетенций"
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    // Преобразование в плоский список для UI
-    const rows = [];
-    let totalSkills = 0;
-    
-    try {
-      console.log('[FORM GET] Processing skill groups...');
-      
-      for (const group of skillGroups || []) {
-        if (!group || !group.items) {
-          console.warn(`[FORM GET] Invalid group structure:`, group);
-          continue;
-        }
-        
-        for (const item of group.items || []) {
-          if (!item || !item.pageId) {
-            console.warn(`[FORM GET] Invalid item structure:`, item);
-            continue;
-          }
-          
-          rows.push({
-            pageId: item.pageId,
-            name: item.name || "Неизвестный навык",
-            description: item.description || "",
-            current: item.current,
-            comment: item.comment || "",
-            employeeId: group.employeeId,
-            employeeName: group.employeeName || "Неизвестный сотрудник",
-            role: group.role || "peer"
-          });
-          totalSkills++;
-        }
-      }
-      
-      console.log(`[FORM GET] Successfully prepared ${totalSkills} skills for ${employees.length} employees`);
-    } catch (error) {
-      console.error('[FORM GET] Failed to process skills data:', {
-        message: error.message,
-        stack: error.stack,
-        skillGroupsCount: skillGroups?.length || 0
-      });
-      
-      return NextResponse.json(
-        { 
-          error: "Ошибка обработки данных навыков",
-          details: process.env.NODE_ENV === 'development' ? {
-            originalError: error.message,
-            skillGroupsCount: skillGroups?.length || 0
-          } : undefined
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    const response = {
-      rows,
-      stats: {
-        totalEmployees: employees.length,
-        totalSkills,
-        reviewerRole: role || 'peer'
+/**
+ * Стандартизированный формат ответов API
+ */
+class ApiResponse {
+  static success(data, meta = {}) {
+    return {
+      success: true,
+      data,
+      meta: {
+        timestamp: new Date().toISOString(),
+        ...meta
       }
     };
-    
-    // Добавляем предупреждения и диагностическую информацию
-    if (totalSkills === 0) {
-      response.warning = "Не найдено навыков для оценки. Проверьте настройки матрицы компетенций.";
-      console.warn('[FORM GET] No skills found for evaluation');
-      
-      // Диагностическая информация для отладки
-      response.debug = {
-        employees: employees.map(e => ({ 
-          id: e.employeeId, 
-          name: e.employeeName, 
-          role: e.role 
-        })),
-        skillGroups: skillGroups ? skillGroups.map(g => ({ 
-          employeeId: g.employeeId, 
-          employeeName: g.employeeName, 
-          role: g.role,
-          itemsCount: g.items?.length || 0,
-          items: g.items?.slice(0, 3).map(i => ({ name: i.name, pageId: i.pageId })) || []
-        })) : [],
-        suggestions: [
-          "Проверьте что в матрице компетенций заполнены поля P1_peer, P2_peer, Manager_scorer для ваших сотрудников",
-          "Убедитесь что поле 'Навык' в матрице правильно связано с базой навыков",
-          "Проверьте что поле 'Описание навыка' заполнено в записях матрицы"
+  }
+
+  static error(message, code = 'UNKNOWN_ERROR', details = null) {
+    return {
+      success: false,
+      error: {
+        message,
+        code,
+        details,
+        timestamp: new Date().toISOString()
+      }
+    };
+  }
+}
+
+/**
+ * Обработчик ошибок Notion API
+ */
+function handleNotionAPIError(error, req) {
+  console.error('Notion API Error:', error);
+  
+  const errorResponse = {
+    error: true,
+    timestamp: new Date().toISOString(),
+    path: new URL(req.url).pathname
+  };
+
+  // Специфичные ошибки Notion API
+  if (error.status === 404) {
+    return new Response(JSON.stringify(ApiResponse.error(
+      'База данных или страница не найдена',
+      'NOT_FOUND'
+    )), { 
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (error.status === 401) {
+    return new Response(JSON.stringify(ApiResponse.error(
+      'Неверный токен API или недостаточно прав доступа',
+      'UNAUTHORIZED'
+    )), { 
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  if (error.status === 429) {
+    return new Response(JSON.stringify(ApiResponse.error(
+      'Превышен лимит запросов',
+      'RATE_LIMITED',
+      { retryAfter: 60 }
+    )), { 
+      status: 429,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Retry-After': '60'
+      }
+    });
+  }
+
+  // Общая ошибка
+  return new Response(JSON.stringify(ApiResponse.error(
+    'Внутренняя ошибка сервера',
+    'INTERNAL_ERROR'
+  )), { 
+    status: 500,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+/**
+ * Получает все данные из Notion базы с пагинацией
+ */
+async function getAllNotionData(databaseId, pageSize = 100) {
+  const allResults = [];
+  let cursor = null;
+  let hasMore = true;
+
+  while (hasMore) {
+    try {
+      const query = {
+        page_size: Math.min(pageSize, 100), // Максимум 100 в Notion API
+        filter: {
+          property: 'Активен', // Фильтр только активных навыков
+          checkbox: { equals: true }
+        },
+        sorts: [
+          {
+            property: 'Название',
+            direction: 'ascending'
+          }
         ]
       };
-    } else if (totalSkills < 5) {
-      response.warning = `Найдено только ${totalSkills} навыков. Возможно, не все данные загружены.`;
-      console.warn(`[FORM GET] Low skill count: ${totalSkills}`);
+      
+      if (cursor) {
+        query.start_cursor = cursor;
+      }
+
+      // Используем fetch API вместо Notion SDK для совместимости с Edge Runtime 
+      const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(query)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`HTTP ${response.status}: ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      allResults.push(...data.results);
+      
+      hasMore = data.has_more;
+      cursor = data.next_cursor;
+      
+    } catch (error) {
+      console.error('Ошибка при получении данных от Notion:', error);
+      break; // Прерываем цикл при ошибке
     }
+  }
+
+  // Трансформируем данные для фронтенда
+  return allResults.map(transformNotionPage);
+}
+
+/**
+ * GET обработчик для загрузки навыков
+ */
+export async function GET(req, { params }) {
+  const { token } = params;
+  const { searchParams } = new URL(req.url);
+  
+  try {
+    // Валидация токена
+    if (!token || typeof token !== 'string') {
+      return new Response(JSON.stringify(ApiResponse.error(
+        'Токен обязателен',
+        'INVALID_TOKEN'
+      )), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Валидация переменных окружения
+    if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
+      console.error('Отсутствуют переменные окружения NOTION_TOKEN или NOTION_DATABASE_ID');
+      return new Response(JSON.stringify(ApiResponse.error(
+        'Конфигурация сервера неполная',
+        'SERVER_CONFIG_ERROR'
+      )), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Здесь можно добавить валидацию токена против базы данных пользователей
+    // const isValidToken = await validateUserToken(token);
+    // if (!isValidToken) { ... }
+
+    console.log(`Загрузка навыков для токена: ${token}`); 
+
+    // Получаем данные от Notion API
+    const skillsData = await getAllNotionData(process.env.NOTION_DATABASE_ID);
     
-    console.log('[FORM GET] ===== Request completed successfully =====');
-    return NextResponse.json(response);
-    
-  } catch (error) {
-    console.error('[FORM GET CRITICAL ERROR]', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString(),
-      token: params?.token?.substring(0, 10) + '...',
-      userAgent: req.headers.get('user-agent')
+    console.log(`Успешно загружено ${skillsData.length} навыков`); 
+
+    // Возвращаем структурированный ответ
+    return new Response(JSON.stringify(ApiResponse.success(skillsData, {
+      count: skillsData.length,
+      token: token
+    })), {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=300', // Кэшируем на 5 минут
+        // CORS заголовки для Cloudflare Pages 
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      }
     });
+
+  } catch (error) {
+    console.error('Критическая ошибка в API endpoint:', error);
     
-    // Специальная обработка известных ошибок
-    let errorMessage = "Внутренняя ошибка сервера";
-    let statusCode = 500;
-    let details = undefined;
-    
-    if (error.message?.includes('Missing environment variables')) {
-      errorMessage = "Ошибка конфигурации сервера";
-      details = "Проверьте переменные окружения в Cloudflare Pages";
-    } else if (error.message?.includes('Module import failed')) {
-      errorMessage = "Ошибка загрузки модулей";
-      details = process.env.NODE_ENV === 'development' ? error.message : "Проверьте структуру проекта";
-    } else if (error.message?.includes('TextEncoder')) {
-      errorMessage = "Ошибка совместимости среды выполнения";
-      details = "Проблема с Edge Runtime";
-    } else if (error.status === 429) {
-      errorMessage = "Слишком много запросов. Попробуйте через минуту.";
-      statusCode = 429;
-    } else if (error instanceof ReferenceError || error instanceof TypeError) {
-      console.error('[FORM GET] JavaScript error detected:', error.message);
-      errorMessage = process.env.NODE_ENV === 'development' 
-        ? `Ошибка кода: ${error.message}` 
-        : "Внутренняя ошибка сервера";
-      details = process.env.NODE_ENV === 'development' ? {
-        type: error.constructor.name,
-        originalError: error.message
-      } : undefined;
-    }
-    
-    return NextResponse.json(
-      { 
-        error: errorMessage,
-        details,
-        timestamp: new Date().toISOString(),
-        ...(process.env.NODE_ENV === 'development' && { 
-          debug: {
-            originalError: error.message,
-            stack: error.stack.split('\n').slice(0, 5).join('\n'),
-            type: error.constructor.name
-          }
-        })
-      }, 
-      { status: statusCode }
-    );
+    return handleNotionAPIError(error, req);
   }
 }
 
-// POST - сохранение оценок
-export async function POST(req, { params }) {
-  try {
-    console.log('[FORM POST] Starting request processing');
-    
-    const { token } = params;
-    
-    // Безопасный импорт модулей
-    let tokenModule, notionModule;
-    
-    try {
-      tokenModule = await safeImport("@/lib/token");
-      notionModule = await safeImport("@/lib/notion");
-    } catch (importError) {
-      console.error('[FORM POST] Module import failed:', importError.message);
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? importError.message : undefined
-        }, 
-        { status: 500 }
-      );
+/**
+ * OPTIONS обработчик для CORS preflight запросов
+ */
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400'
     }
-    
-    const { verifyReviewToken } = tokenModule;
-    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
-    
-    // Проверка токена
-    let payload;
-    try {
-      payload = await verifyReviewToken(token);
-    } catch (error) {
-      return NextResponse.json(
-        { error: "Недействительный или истёкший токен" }, 
-        { status: 401 }
-      );
-    }
-    
-    const { reviewerUserId, role } = payload;
-    
-    // Парсинг тела запроса
-    let body;
-    try {
-      body = await req.json();
-    } catch (error) {
-      return NextResponse.json(
-        { error: "Некорректный JSON" }, 
-        { status: 400 }
-      );
-    }
-    
-    console.log(`[FORM POST] Processing submission from reviewer: ${reviewerUserId}, items: ${body.items?.length || 0}`);
-    
-    // Простая валидация
-    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
-      return NextResponse.json(
-        { error: "Необходимо предоставить массив элементов для обновления" }, 
-        { status: 400 }
-      );
-    }
-    
-    // Валидируем каждый элемент
-    for (const [index, item] of body.items.entries()) {
-      if (!item.pageId || typeof item.value !== 'number' || item.value < 0 || item.value > 5) {
-        return NextResponse.json(
-          { 
-            error: `Некорректный элемент ${index + 1}: требуется pageId и value от 0 до 5`
-          }, 
-          { status: 400 }
-        );
-      }
-    }
-    
-    const { items, mode } = { items: body.items, mode: body.mode || "final" };
-    
-    // Определение поля для обновления
-    const scoreField = ROLE_TO_FIELD[role] || ROLE_TO_FIELD.peer;
-    console.log(`[FORM POST] Using score field: ${scoreField}`);
-    
-    // Batch обновление
-    PerformanceTracker?.start('batch-update');
-    const results = [];
-    const errors = [];
-    
-    for (const [index, item] of items.entries()) {
-      try {
-        console.log(`[FORM POST] Updating item ${index + 1}/${items.length}: ${item.pageId}`);
-        
-        await updateScore(
-          item.pageId, 
-          scoreField, 
-          item.value, 
-          "", // Убираем комментарии
-          null // Не обновляем поле комментариев
-        );
-        
-        results.push({ pageId: item.pageId, success: true });
-        
-      } catch (error) {
-        console.error(`[FORM POST] Failed to update ${item.pageId}:`, error.message);
-        errors.push({ 
-          pageId: item.pageId, 
-          error: error.message 
-        });
-        
-        // Для критических ошибок прерываем процесс
-        if (error.status === 401 || error.status === 403) {
-          throw error;
-        }
-      }
-    }
-    
-    PerformanceTracker?.end('batch-update');
-    
-    console.log(`[FORM POST] Batch update completed: ${results.length} success, ${errors.length} errors`);
-    
-    const response = {
-      ok: true,
-      updated: results.length,
-      failed: errors.length,
-      mode
-    };
-    
-    // Добавляем детали ошибок если есть
-    if (errors.length > 0) {
-      response.errors = errors;
-      response.message = `Обновлено ${results.length} из ${items.length} записей. ${errors.length} ошибок.`;
-    }
-    
-    return NextResponse.json(response);
-    
-  } catch (error) {
-    console.error('[FORM POST ERROR]', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (error.status === 401 || error.status === 403) {
-      return NextResponse.json(
-        { error: "Нет прав для обновления записей" }, 
-        { status: 403 }
-      );
-    }
-    
-    if (error.status === 429) {
-      return NextResponse.json(
-        { error: "Слишком много запросов. Попробуйте через несколько секунд." }, 
-        { status: 429 }
-      );
-    }
-    
-    return NextResponse.json(
-      { 
-        error: process.env.NODE_ENV === 'development' 
-          ? `Ошибка обновления: ${error.message}` 
-          : "Ошибка сохранения данных"
-      }, 
-      { status: 500 }
-    );
-  }
+  });
 }
