@@ -201,7 +201,8 @@ export async function GET(req, { params }) {
           details: process.env.NODE_ENV === 'development' ? {
             originalError: error.message,
             employeeCount: employees.length,
-            reviewerUserId
+            reviewerUserId,
+            employees: employees.map(e => ({ id: e.employeeId, name: e.employeeName, role: e.role }))
           } : "Проверьте настройки матрицы компетенций"
         }, 
         { status: 500 }
@@ -271,6 +272,19 @@ export async function GET(req, { params }) {
     if (totalSkills === 0) {
       response.warning = "Не найдено навыков для оценки. Проверьте настройки матрицы компетенций.";
       console.warn('[FORM GET] No skills found for evaluation');
+      
+      // Добавляем диагностическую информацию для отладки
+      if (process.env.NODE_ENV === 'development') {
+        response.debug = {
+          employees: employees.map(e => ({ id: e.employeeId, name: e.employeeName, role: e.role })),
+          skillGroups: skillGroups ? skillGroups.map(g => ({ 
+            employeeId: g.employeeId, 
+            employeeName: g.employeeName, 
+            role: g.role,
+            itemsCount: g.items?.length || 0 
+          })) : []
+        };
+      }
     } else if (totalSkills < 5) {
       response.warning = `Найдено только ${totalSkills} навыков. Возможно, не все данные загружены.`;
       console.warn(`[FORM GET] Low skill count: ${totalSkills}`);
@@ -324,7 +338,7 @@ export async function GET(req, { params }) {
   }
 }
 
-// POST - сохранение оценок (без изменений, так как проблема в GET)
+// POST - сохранение оценок
 export async function POST(req, { params }) {
   try {
     console.log('[FORM POST] Starting request processing');
