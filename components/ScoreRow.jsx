@@ -89,7 +89,7 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
       overflow: "hidden"
     })
   };
-
+ 
   const sliderStyle = {
     width: "140px",
     height: "6px",
