@@ -59,7 +59,7 @@ const EmptyState = ({ reviewerInfo }) => (
     </div>
   </div>
 );
- 
+
 // Хук для работы с данными формы
 function useFormData(token) {
   const [state, setState] = useState({
@@ -89,6 +89,7 @@ function useFormData(token) {
       const result = await response.json();
       console.log('✅ Данные получены:', result);
 
+      // ИСПРАВЛЕНО: Проверяем правильную структуру ответа
       if (!result.success) {
         throw new Error(result.error || 'Не удалось получить данные');
       }
@@ -225,7 +226,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Заголовок с информацией о ревьюере */}
+        {/* ИСПРАВЛЕННЫЙ заголовок с информацией о ревьюере */}
         <div className="bg-white rounded-xl shadow-lg p-8 mb-8 border border-gray-200">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -357,10 +358,15 @@ export default function OptimizedSkillAssessmentForm({ params }) {
           )}
         </div>
 
-        {/* Дополнительная информация */}
-        {stats?.loadTimeMs && (
+        {/* Дополнительная информация для разработчика */}
+        {process.env.NODE_ENV === 'development' && (
           <div className="mt-6 text-center text-xs text-gray-500">
-            Данные загружены за {stats.loadTimeMs} мс
+            <details>
+              <summary className="cursor-pointer">Debug Info</summary>
+              <pre className="mt-2 text-left bg-gray-100 p-2 rounded text-xs">
+                {JSON.stringify({ reviewerInfo, stats }, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
       </div>
