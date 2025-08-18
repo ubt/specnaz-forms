@@ -186,105 +186,86 @@ export async function POST(req) {
 
     console.log(`[STEP 2] Found ${reviewers.length} reviewers`);
 
-    // Потоковый ответ с прогрессом
-    const total = reviewers.length;
+    // Генерация токенов и ссылок
+    console.log('[STEP 3] Generating tokens and links...');
     const exp = Math.floor(Date.now() / 1000) + expDays * 24 * 3600;
     const links = [];
     const errors = [];
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        PerformanceTracker.start('generate-tokens');
-        let i = 0;
-
-        for (const reviewer of reviewers) {
-          try {
-            const tokenPayload = {
-              reviewerUserId: reviewer.reviewerUserId,
-              role: reviewer.role || 'peer',
-              teamName,
-              exp
-            };
-
-            console.log(`[TOKEN] Generating for reviewer: ${reviewer.name} (${reviewer.reviewerUserId})`);
-            const token = await signReviewToken(tokenPayload);
-
-            links.push({
-              name: reviewer.name,
-              url: `${env.NEXT_PUBLIC_BASE_URL}/form/${token}`,
-              userId: reviewer.reviewerUserId,
-              role: reviewer.role || 'peer'
-            });
-          } catch (error) {
-            console.error(`[TOKEN] Failed to generate token for reviewer ${reviewer.name}:`, error);
-            errors.push(`${reviewer.name}: ${error.message}`);
-          }
-
-          i++;
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ progress: i / total }) + "\n")
-          );
-        }
-
-        PerformanceTracker.end('generate-tokens');
-
-        if (!links.length) {
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                error: "Не удалось сгенерировать ни одной ссылки",
-                details: errors.join("; ")
-              }) + "\n"
-            )
-          );
-          controller.close();
-          PerformanceTracker.end(operation);
-          return;
-        }
-
-        const duration = PerformanceTracker.end(operation);
-
-        console.log('[SUCCESS] Review links generated successfully:', {
+    PerformanceTracker.start('generate-tokens');
+    
+    for (const reviewer of reviewers) {
+      try {
+        const tokenPayload = { 
+          reviewerUserId: reviewer.reviewerUserId, 
+          role: reviewer.role || 'peer',
           teamName,
-          employeeCount: employees.length,
-          reviewerCount: reviewers.length,
-          linkCount: links.length,
-          expDays,
-          duration,
-          errors: errors.length > 0 ? errors : undefined
-        });
-
-        const response = {
-          ok: true,
-          teamName,
-          count: links.length,
-          links,
-          stats: {
-            employeeCount: employees.length,
-            reviewerCount: reviewers.length,
-            generationTime: duration,
-            expirationDays: expDays,
-            expiresAt: new Date(exp * 1000).toISOString()
-          }
+          exp 
         };
-
-        if (errors.length > 0) {
-          response.warnings = errors;
-          response.message = `Сгенерировано ${links.length} ссылок из ${reviewers.length} ревьюеров. ${errors.length} ошибок.`;
-        }
-
-        controller.enqueue(encoder.encode(JSON.stringify(response) + "\n"));
-        controller.close();
+        
+        console.log(`[TOKEN] Generating for reviewer: ${reviewer.name} (${reviewer.reviewerUserId})`);
+        const token = await signReviewToken(tokenPayload);
+        
+        links.push({ 
+          name: reviewer.name, 
+          url: `${env.NEXT_PUBLIC_BASE_URL}/form/${token}`,
+          userId: reviewer.reviewerUserId,
+          role: reviewer.role || 'peer'
+        });
+        
+      } catch (error) {
+        console.error(`[TOKEN] Failed to generate token for reviewer ${reviewer.name}:`, error);
+        errors.push(`${reviewer.name}: ${error.message}`);
       }
+    }
+    
+    PerformanceTracker.end('generate-tokens');
+    
+    if (!links.length) {
+      console.error('[STEP 3] Failed to generate any links');
+      return NextResponse.json(
+        { 
+          error: "Не удалось сгенерировать ни одной ссылки",
+          details: errors.join("; ")
+        }, 
+        { status: 500 }
+      );
+    }
+
+    const duration = PerformanceTracker.end(operation);
+    
+    // Логирование успешной генерации
+    console.log('[SUCCESS] Review links generated successfully:', {
+      teamName,
+      employeeCount: employees.length,
+      reviewerCount: reviewers.length,
+      linkCount: links.length,
+      expDays,
+      duration,
+      errors: errors.length > 0 ? errors : undefined
     });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'application/x-ndjson',
-        'Cache-Control': 'no-cache'
+    const response = {
+      ok: true,
+      teamName,
+      count: links.length,
+      links,
+      stats: {
+        employeeCount: employees.length,
+        reviewerCount: reviewers.length,
+        generationTime: duration,
+        expirationDays: expDays,
+        expiresAt: new Date(exp * 1000).toISOString()
       }
-    });
+    };
+    
+    // Добавляем предупреждения если были ошибки
+    if (errors.length > 0) {
+      response.warnings = errors;
+      response.message = `Сгенерировано ${links.length} ссылок из ${reviewers.length} ревьюеров. ${errors.length} ошибок.`;
+    }
+    
+    return NextResponse.json(response);
     
   } catch (error) {
     PerformanceTracker.end(operation);

@@ -69,6 +69,14 @@ export default function OptimizedAdmin() {
     setErrors({});
     setLoading(true);
     setProgress(0);
+    
+    // Плавная анимация прогресса
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.min(95, (elapsed / 4000) * 95);
+      setProgress(pct);
+    }, 100);
 
     try {
       const requestData = {
@@ -88,42 +96,20 @@ export default function OptimizedAdmin() {
         body: JSON.stringify(requestData)
       });
 
+      const data = await parseResponse(res);
+      
       if (!res.ok) {
-        const data = await parseResponse(res);
         const errorMsg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
         throw new Error(errorMsg);
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) {
-        throw new Error('Streaming not supported');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const evt = JSON.parse(line);
-          if (evt.progress !== undefined) {
-            setProgress(evt.progress * 100);
-          } else if (evt.ok) {
-            const generatedLinks = evt.links || [];
-            setLinks(generatedLinks);
-            const successMsg = `✅ Команда: ${evt.teamName}. Создано ссылок: ${evt.count || generatedLinks.length}`;
-            setMsg(successMsg);
-            console.log('[ADMIN] Successfully generated', generatedLinks.length, 'links');
-          } else if (evt.error) {
-            throw new Error(evt.error);
-          }
-        }
-      }
+      const generatedLinks = data.links || [];
+      setLinks(generatedLinks);
+      
+      const successMsg = `✅ Команда: ${data.teamName}. Создано ссылок: ${data.count || generatedLinks.length}`;
+      setMsg(successMsg);
+      
+      console.log('[ADMIN] Successfully generated', generatedLinks.length, 'links');
 
     } catch (error) {
       console.error('[ADMIN] Generation failed:', error);
@@ -141,6 +127,7 @@ export default function OptimizedAdmin() {
       
       setMsg(errorMsg);
     } finally {
+      clearInterval(timer);
       setProgress(100);
       setTimeout(() => {
         setLoading(false);
