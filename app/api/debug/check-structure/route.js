@@ -2,6 +2,43 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 
+function extractRollupText(prop) {
+  if (!prop) return "empty";
+  if (prop.type === "rollup") {
+    const roll = prop.rollup;
+    if (roll?.type === "array" && Array.isArray(roll.array)) {
+      const text = roll.array
+        .map(item => {
+          if (item.type === "rich_text") {
+            return item.rich_text?.map(t => t.plain_text).join("") || "";
+          }
+          if (item.type === "title") {
+            return item.title?.map(t => t.plain_text).join("") || "";
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      return text.substring(0, 100) || "empty";
+    }
+    if (roll?.type === "rich_text") {
+      const text = roll.rich_text?.map(t => t.plain_text).join("") || "";
+      return text.substring(0, 100) || "empty";
+    }
+    if (roll?.type === "title") {
+      const text = roll.title?.map(t => t.plain_text).join("") || "";
+      return text.substring(0, 100) || "empty";
+    }
+    return "empty";
+  }
+  if (prop.type === "rich_text") {
+    const text = prop.rich_text?.map(t => t.plain_text).join("") || "";
+    return text.substring(0, 100) || "empty";
+  }
+  return "empty";
+}
+
 export async function GET() {
   try {
     console.log('[STRUCTURE CHECK] Starting Notion structure analysis');
@@ -30,7 +67,7 @@ export async function GET() {
       const expectedFields = {
         [PROP.employee]: "relation or people",
         [PROP.skill]: "relation", 
-        [PROP.skillDescription]: "rich_text",
+        [PROP.skillDescription]: "rollup",
         [PROP.p1Peer]: "people",
         [PROP.p2Peer]: "people",
         [PROP.managerScorer]: "people",
@@ -129,7 +166,7 @@ export async function GET() {
             id: row.id,
             employee: props[PROP.employee]?.relation?.[0]?.id || props[PROP.employee]?.people?.[0]?.id || "not found",
             skill: props[PROP.skill]?.relation?.[0]?.id || "not found",
-            skillDescription: props[PROP.skillDescription]?.rich_text?.map(t => t.plain_text).join("").substring(0, 100) || "empty",
+            skillDescription: extractRollupText(props[PROP.skillDescription]),
             p1Score: props[PROP.p1Score]?.number || null,
             selfScore: props[PROP.selfScore]?.number || null
           };
@@ -159,7 +196,7 @@ export async function GET() {
     
     // Специальные рекомендации
     if (result.databases.matrix?.expectedFields?.[PROP.skillDescription]?.actual === "missing") {
-      result.summary.recommendations.push(`Add "${PROP.skillDescription}" rich_text field to matrix database`);
+      result.summary.recommendations.push(`Add "${PROP.skillDescription}" rollup field to matrix database`);
     }
     
     return NextResponse.json(result);
