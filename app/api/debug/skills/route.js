@@ -97,11 +97,43 @@ export async function POST(req) {
       // Проверяем есть ли описание в матрице
       if (matrixRows.results.length > 0) {
         const firstRow = matrixRows.results[0];
-        const description = firstRow.properties["Описание навыка"];
-        if (description) {
+        const descProp = firstRow.properties["Описание навыка"];
+
+        if (descProp) {
+          let content = "Пусто";
+          let rollupType;
+
+          if (descProp.type === "rollup") {
+            rollupType = descProp.rollup?.type;
+            const rollup = descProp.rollup;
+
+            if (rollup?.type === "array" && Array.isArray(rollup.array)) {
+              content = rollup.array
+                .map(item => {
+                  if (item.type === "rich_text") {
+                    return item.rich_text?.map(t => t.plain_text).join("") || "";
+                  }
+                  if (item.type === "title") {
+                    return item.title?.map(t => t.plain_text).join("") || "";
+                  }
+                  return "";
+                })
+                .filter(Boolean)
+                .join(" ")
+                .trim() || "Пусто";
+            } else if (rollup?.type === "rich_text") {
+              content = rollup.rich_text?.map(t => t.plain_text).join("") || "Пусто";
+            } else if (rollup?.type === "title") {
+              content = rollup.title?.map(t => t.plain_text).join("") || "Пусто";
+            }
+          } else if (descProp.type === "rich_text") {
+            content = descProp.rich_text?.map(t => t.plain_text).join("") || "Пусто";
+          }
+
           diagnostic.matrixDescription = {
-            type: description.type,
-            content: description.rich_text?.map(t => t.plain_text).join("") || "Пусто"
+            type: descProp.type,
+            rollupType,
+            content
           };
         }
       }
