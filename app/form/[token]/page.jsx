@@ -246,8 +246,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
                 <div className="text-sm text-gray-600 space-y-1">
                   <div><strong>Всего навыков:</strong> {stats?.totalSkills || 0}</div>
                   <div><strong>Сотрудников:</strong> {stats?.totalEmployees || 0}</div>
-                  <div><strong>Оценено:</strong> {scores.size}</div>
-                  <div><strong>Ваша роль:</strong> {reviewerInfo?.role || 'peer'}</div>
+                  <div><strong>Оценено:</strong> {scores.size}</div>    
                 </div>
               </div>
             </div>
@@ -257,7 +256,7 @@ export default function OptimizedSkillAssessmentForm({ params }) {
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
               <span>Прогресс оценки</span>
-              <span>{scores.size} из {stats?.totalSkills || 0}</span>
+              <span> {scores.size} из {stats?.totalSkills || 0}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
