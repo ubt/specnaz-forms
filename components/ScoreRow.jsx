@@ -3,12 +3,11 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
 
-// Мемоизированный debounce hook с улучшенной производительностью
-function useOptimizedDebounce(callback, delay = 150) {
+// Оптимизированный debounce hook
+function useOptimizedDebounce(callback, delay = 100) {
   const timeoutRef = useRef();
   const callbackRef = useRef(callback);
   
-  // Обновляем коллбэк без пересоздания функции
   useEffect(() => {
     callbackRef.current = callback;
   });
@@ -21,18 +20,17 @@ function useOptimizedDebounce(callback, delay = 150) {
   }, [delay]);
 }
 
-// Оптимизированный компонент строки оценки
-const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
+// Оптимизированный компонент строки оценки с широким описанием
+const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
   const [isDirty, setIsDirty] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   
   const debouncedChange = useOptimizedDebounce(
     useCallback((newValue) => {
       onChange({ value: newValue });
       setIsDirty(false);
     }, [onChange]),
-    100 // Уменьшена задержка для более отзывчивого UX
+    100
   );
   
   const handleValueChange = useCallback((newVal) => {
@@ -49,53 +47,52 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
       setVal(initialValue);
       debouncedChange(initialValue);
     }
-  }, []); // Пустой массив зависимостей для выполнения только при монтировании
-  
-  // Мемоизированная проверка необходимости кнопки "показать больше"
-  const needsExpansion = item.description && item.description.length > 200;
-  
-  // Мемоизированные стили для предотвращения пересоздания объектов
+  }, []); // Пустой массив зависимостей
+
+  // Стили для компонента
   const containerStyle = {
     display: "grid",
     gridTemplateColumns: "1fr auto auto",
     alignItems: "start",
-    padding: "16px 20px",
+    padding: "20px 24px",
     borderBottom: "1px solid #e5e7eb",
     backgroundColor: isDirty ? "#f8fafc" : "transparent",
     transition: "background-color 0.2s ease",
-    gap: "16px",
-    minHeight: "80px"
+    gap: "20px",
+    minHeight: "100px"
   };
 
   const titleStyle = {
-    fontWeight: 600,
+    fontWeight: 700,
     lineHeight: 1.4,
-    fontSize: "15px",
-    marginBottom: "8px",
+    fontSize: "16px",
+    marginBottom: "12px",
     color: "#1f2937",
     wordBreak: "break-word"
   };
 
+  // ШИРОКОЕ описание без кнопки "показать больше"
   const descriptionStyle = {
-    color: "#6b7280",
-    fontSize: "13px",
-    lineHeight: 1.5,
+    color: "#4b5563",
+    fontSize: "14px",
+    lineHeight: 1.6,
     whiteSpace: "pre-wrap",
     wordWrap: "break-word",
-    ...(needsExpansion && !isExpanded && {
-      display: "-webkit-box",
-      WebkitLineClamp: 3,
-      WebkitBoxOrient: "vertical",
-      overflow: "hidden"
-    })
+    maxWidth: "none", // Убираем ограничения ширины
+    width: "100%",
+    marginTop: "8px",
+    padding: "12px",
+    backgroundColor: "#f9fafb",
+    borderRadius: "8px",
+    border: "1px solid #e5e7eb"
   };
- 
+
   const sliderStyle = {
-    width: "140px",
-    height: "6px",
+    width: "160px",
+    height: "8px",
     background: `linear-gradient(to right, 
       #ef4444 0%, #f97316 20%, #eab308 40%, #22c55e 60%, #3b82f6 80%, #8b5cf6 100%)`,
-    borderRadius: "3px",
+    borderRadius: "4px",
     outline: "none",
     cursor: "pointer",
     alignSelf: "center",
@@ -104,13 +101,13 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   };
 
   const numberInputStyle = {
-    width: "60px",
-    padding: "8px 10px",
+    width: "70px",
+    padding: "10px 12px",
     border: "2px solid #e5e7eb",
-    borderRadius: "6px",
-    fontSize: "14px",
+    borderRadius: "8px",
+    fontSize: "16px",
     textAlign: "center",
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#374151",
     transition: "border-color 0.2s ease, box-shadow 0.2s ease",
     alignSelf: "center"
@@ -143,8 +140,8 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
 
   return (
     <div style={containerStyle}>
-      {/* Информация о навыке */}
-      <div style={{ minWidth: 0 }}>
+      {/* Информация о навыке с ШИРОКИМ описанием */}
+      <div style={{ minWidth: 0, width: "100%" }}>
         <div style={titleStyle}>
           {item.name}
         </div>
@@ -155,48 +152,27 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
           alignItems: "center",
           backgroundColor: getLevelColor(val),
           color: "white",
-          padding: "4px 10px",
-          borderRadius: "12px",
-          fontSize: "12px",
-          fontWeight: "600",
-          marginBottom: item.description ? "8px" : "0"
+          padding: "6px 14px",
+          borderRadius: "16px",
+          fontSize: "13px",
+          fontWeight: "700",
+          marginBottom: item.description ? "12px" : "0",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
         }}>
-          <span style={{ marginRight: "6px" }}>{val}</span>
+          <span style={{ marginRight: "8px", fontSize: "16px" }}>{val}</span>
           <span>{getLevelText(val)}</span>
         </div>
         
+        {/* ШИРОКОЕ описание навыка БЕЗ кнопки "показать больше" */}
         {item.description && (
-          <div>
-            <div style={descriptionStyle} title={item.description}>
-              {item.description}
-            </div>
-            {needsExpansion && (
-              <button
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#3b82f6",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  marginTop: "4px",
-                  padding: "2px 0",
-                  textDecoration: "none",
-                  transition: "color 0.2s ease"
-                }}
-                onClick={() => setIsExpanded(!isExpanded)}
-                type="button"
-                onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
-                onMouseLeave={(e) => e.target.style.textDecoration = "none"}
-              >
-                {isExpanded ? "↑ Свернуть" : "↓ Показать полностью"}
-              </button>
-            )}
+          <div style={descriptionStyle}>
+            {item.description}
           </div>
         )}
       </div>
       
       {/* Слайдер с улучшенным стилем */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
         <input
           type="range"
           min={0}
@@ -207,7 +183,12 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
           onChange={(e) => handleValueChange(Number(e.target.value))}
           aria-label={`Оценка для ${item.name}`}
         />
-        <div style={{ fontSize: "11px", color: "#6b7280", fontWeight: "500" }}>
+        <div style={{ 
+          fontSize: "12px", 
+          color: "#6b7280", 
+          fontWeight: "600",
+          textAlign: "center"
+        }}>
           0 — 5
         </div>
       </div>
@@ -240,6 +221,6 @@ const OptimizedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   );
 });
 
-OptimizedScoreRow.displayName = 'OptimizedScoreRow';
+FixedScoreRow.displayName = 'FixedScoreRow';
 
-export default OptimizedScoreRow;
+export default FixedScoreRow;
