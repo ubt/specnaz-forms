@@ -15,6 +15,8 @@ export default function FormPage({ params }) {
   const [lastSaved, setLastSaved] = useState(null);
   const [debugInfo, setDebugInfo] = useState(null);
   const [mounted, setMounted] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const token = params.token;
 
   // Состояние черновика
@@ -43,6 +45,7 @@ export default function FormPage({ params }) {
     if (!mounted) return;
     
     try {
+      console.log('[DIAGNOSTIC] Running comprehensive form diagnostic...');
       const res = await fetch('/api/debug/form', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,98 +53,119 @@ export default function FormPage({ params }) {
       });
       const data = await res.json();
       setDebugInfo(data);
-      console.log('Diagnostic results:', data);
+      console.log('[DIAGNOSTIC] Results:', data);
+      
+      // Анализируем результаты диагностики
+      if (data.summary?.errors?.length > 0) {
+        const errorMessages = data.summary.errors.map(e => `${e.name}: ${e.error}`).join('\n');
+        setMsg(`❌ Обнаружены проблемы:\n${errorMessages}`);
+      } else if (data.summary?.allStepsCompleted) {
+        setMsg("✅ Диагностика прошла успешно, но навыки не загружаются. Проверьте заполнение матрицы компетенций.");
+      }
     } catch (error) {
-      console.error('Diagnostic failed:', error);
+      console.error('[DIAGNOSTIC] Failed:', error);
       setDebugInfo({ error: error.message });
+      setMsg("❌ Ошибка диагностики: " + error.message);
     }
   };
 
-  // Загрузка данных с улучшенной обработкой ошибок
+  // Функция загрузки с улучшенной диагностикой
+  const loadData = useCallback(async () => {
+    if (!mounted) return;
+    
+    setLoading(true);
+    setLoadError(null);
+    setMsg("");
+    
+    try {
+      console.log(`[LOAD] Attempt ${retryCount + 1} for token: ${token.substring(0, 10)}...`);
+      
+      const res = await fetch(`/api/form/${token}`, { 
+        cache: "no-store",
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+      
+      console.log(`[LOAD] Response status: ${res.status}`);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.log(`[LOAD] Error response:`, errorData);
+        
+        if (res.status === 401) {
+          throw new Error("Ссылка недействительна или истекла. Запросите новую ссылку у администратора.");
+        }
+        if (res.status === 404) {
+          throw new Error("Не найдено сотрудников для оценки. Проверьте настройки матрицы компетенций.");
+        }
+        if (res.status >= 500) {
+          throw new Error(errorData?.error || "Ошибка сервера. Попробуйте позже.");
+        }
+        throw new Error(errorData?.error || `HTTP ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log(`[LOAD] Success response:`, data);
+      
+      setRows(data?.rows || []);
+      setStats(data?.stats || null);
+      setRetryCount(0); // Сбрасываем счетчик попыток при успехе
+      
+      if (data?.warning) {
+        setMsg(`⚠️ ${data.warning}`);
+      } else if (data?.rows?.length > 0) {
+        setMsg(`✅ Загружено ${data.rows.length} навыков для оценки`);
+        setTimeout(() => setMsg(""), 5000);
+      } else {
+        setMsg("⚠️ Загрузка завершена, но навыки не найдены");
+        // Автоматически запускаем диагностику если нет навыков
+        await runDiagnostic();
+      }
+      
+    } catch (error) {
+      console.error(`[LOAD] Failed:`, error);
+      setLoadError(error.message);
+      setMsg(error.message);
+      
+      // Запускаем диагностику при ошибке
+      if (retryCount === 0) {
+        console.log('[LOAD] Running diagnostic due to load error...');
+        await runDiagnostic();
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, mounted, retryCount]);
+
+  // Загрузка данных с retry логикой
   useEffect(() => {
     if (!mounted) return;
     
-    let cancelled = false;
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    async function loadWithRetry() {
-      while (retryCount < maxRetries && !cancelled) {
-        setLoading(true);
-        setMsg("");
-        
-        try {
-          console.log(`[LOAD] Attempt ${retryCount + 1} for token: ${token.substring(0, 10)}...`);
-          
-          const res = await fetch(`/api/form/${token}`, { 
-            cache: "no-store",
-            headers: {
-              'Accept': 'application/json',
-            }
-          });
-          
-          console.log(`[LOAD] Response status: ${res.status}`);
-          
-          const data = await res.json();
-          console.log(`[LOAD] Response data:`, data);
-          
-          if (!res.ok) {
-            if (res.status === 401) {
-              throw new Error("Ссылка недействительна или истекла");
-            }
-            if (res.status === 404) {
-              throw new Error("Не найдено сотрудников для оценки");
-            }
-            if (res.status >= 500) {
-              throw new Error(data?.error || "Ошибка сервера");
-            }
-            throw new Error(data?.error || `HTTP ${res.status}`);
-          }
-          
-          if (!cancelled) {
-            setRows(data?.rows || []);
-            setStats(data?.stats || null);
-            
-            if (data?.warning) {
-              setMsg(`Предупреждение: ${data.warning}`);
-            } else if (data?.rows?.length > 0) {
-              setMsg(`Загружено ${data.rows.length} навыков для оценки`);
-              setTimeout(() => setMsg(""), 3000);
-            }
-          }
-          break; // Успешно загружено
-          
-        } catch (error) {
-          retryCount++;
-          console.error(`[LOAD] Attempt ${retryCount} failed:`, error);
-          
-          if (retryCount >= maxRetries || cancelled) {
-            if (!cancelled) {
-              setMsg(error.message || "Не удалось загрузить данные");
-              console.log('[LOAD] Running diagnostic...');
-              await runDiagnostic();
-            }
-            break;
-          }
-          
-          // Экспоненциальная задержка перед повтором
-          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
-          setMsg(`Попытка ${retryCount} не удалась, повтор через ${delay/1000}с...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-      
-      if (!cancelled) {
-        setLoading(false);
-      }
-    }
-
-    loadWithRetry();
+    const maxRetries = 2;
+    let timeoutId;
     
-    return () => { 
-      cancelled = true; 
+    const attemptLoad = async () => {
+      await loadData();
+      
+      // Если загрузка не удалась и есть попытки - повторяем
+      if (loadError && retryCount < maxRetries) {
+        const delay = Math.min(1000 * (retryCount + 1), 3000);
+        console.log(`[LOAD] Retrying in ${delay}ms...`);
+        setMsg(`Попытка ${retryCount + 1} не удалась, повтор через ${delay/1000}с...`);
+        
+        timeoutId = setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+        }, delay);
+      }
     };
-  }, [token, mounted]);
+    
+    attemptLoad();
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [loadData, retryCount]);
 
   // Оптимизированный обработчик изменений
   const onRowChange = useCallback((pageId) => (newData) => {
@@ -267,6 +291,13 @@ export default function FormPage({ params }) {
     setTimeout(() => setMsg(""), 3000);
   };
 
+  // Повторная попытка загрузки
+  const retryLoad = () => {
+    setRetryCount(0);
+    setLoadError(null);
+    loadData();
+  };
+
   // Стили
   const containerStyle = { 
     padding: 16, 
@@ -288,7 +319,9 @@ export default function FormPage({ params }) {
     return (
       <main style={containerStyle}>
         <div style={{ textAlign: 'center', padding: 48 }}>
-          <div style={{ fontSize: 18, marginBottom: 16 }}>Загрузка данных...</div>
+          <div style={{ fontSize: 18, marginBottom: 16 }}>
+            {loading ? 'Загрузка данных...' : 'Инициализация...'}
+          </div>
           <div style={{ 
             width: 200, 
             height: 4, 
@@ -305,19 +338,9 @@ export default function FormPage({ params }) {
             }} />
           </div>
           
-          {/* Показываем диагностику если есть ошибки */}
-          {debugInfo && (
-            <div style={{ 
-              marginTop: 24,
-              padding: 16,
-              background: '#f8f9fa',
-              borderRadius: 8,
-              textAlign: 'left',
-              fontSize: 12,
-              fontFamily: 'monospace'
-            }}>
-              <h4>Диагностика:</h4>
-              <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+          {retryCount > 0 && (
+            <div style={{ marginTop: 16, color: '#6c757d', fontSize: 14 }}>
+              Попытка {retryCount + 1}...
             </div>
           )}
         </div>
@@ -495,26 +518,45 @@ export default function FormPage({ params }) {
           border: '1px solid #e9ecef'
         }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
-          <div style={{ fontSize: 18, marginBottom: 8 }}>Нет сотрудников для оценки</div>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>
+            {loadError ? 'Ошибка загрузки' : 'Нет сотрудников для оценки'}
+          </div>
           <div style={{ color: '#6c757d', marginBottom: 16 }}>
-            Возможно, для вас не назначены задачи по оценке, или данные ещё загружаются.
+            {loadError ? loadError : 'Возможно, для вас не назначены задачи по оценке, или данные ещё загружаются.'}
           </div>
           
-          {/* Кнопка диагностики */}
-          <button
-            onClick={runDiagnostic}
-            style={{
-              padding: "8px 16px",
-              background: "#17a2b8",
-              color: "white",
-              border: "none",
-              borderRadius: 4,
-              fontSize: 14,
-              cursor: "pointer"
-            }}
-          >
-            🔍 Запустить диагностику
-          </button>
+          {/* Кнопки действий */}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={retryLoad}
+              style={{
+                padding: "8px 16px",
+                background: "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                fontSize: 14,
+                cursor: "pointer"
+              }}
+            >
+              🔄 Повторить загрузку
+            </button>
+            
+            <button
+              onClick={runDiagnostic}
+              style={{
+                padding: "8px 16px",
+                background: "#17a2b8",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                fontSize: 14,
+                cursor: "pointer"
+              }}
+            >
+              🔍 Запустить диагностику
+            </button>
+          </div>
           
           {/* Показываем результаты диагностики */}
           {debugInfo && (
@@ -533,7 +575,31 @@ export default function FormPage({ params }) {
               <h4 style={{ fontFamily: 'system-ui', fontSize: 16, marginBottom: 12 }}>
                 Результаты диагностики:
               </h4>
-              <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+              
+              {debugInfo.summary && (
+                <div style={{ marginBottom: 16, fontFamily: 'system-ui' }}>
+                  <p><strong>Статус:</strong> {debugInfo.summary.allStepsCompleted ? '✅ Все проверки пройдены' : '❌ Обнаружены проблемы'}</p>
+                  <p><strong>Успешно:</strong> {debugInfo.summary.successfulSteps}/{debugInfo.summary.totalSteps} проверок</p>
+                  
+                  {debugInfo.summary.recommendations?.length > 0 && (
+                    <div>
+                      <strong>Рекомендации:</strong>
+                      <ul style={{ margin: '8px 0', paddingLeft: 20 }}>
+                        {debugInfo.summary.recommendations.map((rec, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}>{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <details>
+                <summary style={{ cursor: 'pointer', fontFamily: 'system-ui' }}>
+                  Детальные результаты
+                </summary>
+                <pre style={{ marginTop: 8 }}>{JSON.stringify(debugInfo, null, 2)}</pre>
+              </details>
             </div>
           )}
         </div>
@@ -551,7 +617,8 @@ export default function FormPage({ params }) {
           borderRadius: 6,
           border: `1px solid ${msg.includes('✅') || msg.includes('✓') ? '#c3e6cb' : 
                                 msg.includes('❌') || msg.includes('⚠️') ? '#f5c6cb' : '#bee5eb'}`,
-          fontSize: 14
+          fontSize: 14,
+          whiteSpace: 'pre-line'
         }}>
           {msg}
         </div>
