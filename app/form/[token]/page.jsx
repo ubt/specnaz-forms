@@ -274,12 +274,12 @@ export default function OptimizedSkillAssessmentForm({ params }) {
         {stats?.employees && stats.employees.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              👥 Сотрудники для оценки ({stats.employees.length})
+              👥 Сотрудники для оценки ({stats.employees.length}):
             </h3>
             <div className="flex flex-wrap gap-3">
               {stats.employees.map((emp, index) => (
                 <div key={index} className="bg-gray-100 px-3 py-2 rounded-lg text-sm">
-                  <strong>{emp.name}</strong> 
+                  <strong>{emp.name} - </strong> 
                   <span className="text-gray-600 ml-2">({emp.role})</span>
                 </div>
               ))}
