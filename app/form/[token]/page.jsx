@@ -141,31 +141,31 @@ export default function FormPage({ params }) {
   // Загрузка данных с retry логикой
   useEffect(() => {
     if (!mounted) return;
-    
+
     const maxRetries = 2;
     let timeoutId;
-    
+
     const attemptLoad = async () => {
       await loadData();
-      
+
       // Если загрузка не удалась и есть попытки - повторяем
       if (loadError && retryCount < maxRetries) {
         const delay = Math.min(1000 * (retryCount + 1), 3000);
         console.log(`[LOAD] Retrying in ${delay}ms...`);
         setMsg(`Попытка ${retryCount + 1} не удалась, повтор через ${delay/1000}с...`);
-        
+
         timeoutId = setTimeout(() => {
           setRetryCount(prev => prev + 1);
         }, delay);
       }
     };
-    
+
     attemptLoad();
-    
+
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [loadData, retryCount]);
+  }, [mounted, loadData, retryCount, loadError]);
 
   // Оптимизированный обработчик изменений
   const onRowChange = useCallback((pageId) => (newData) => {
