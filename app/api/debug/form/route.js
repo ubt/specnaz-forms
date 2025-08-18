@@ -102,9 +102,10 @@ export async function POST(req) {
     // Шаг 3: Импорт модулей
     diagnostic.steps.push({ step: 3, name: "imports", status: "starting" });
     
+    let tokenModule, notionModule;
     try {
-      const tokenModule = await import("@/lib/token");
-      const notionModule = await import("@/lib/notion");
+      tokenModule = await import("@/lib/token");
+      notionModule = await import("@/lib/notion");
       
       diagnostic.steps.push({
         step: 3,
@@ -129,9 +130,11 @@ export async function POST(req) {
     diagnostic.steps.push({ step: 4, name: "token_verification", status: "starting" });
     
     let payload;
+    let tokenValid = false;
     try {
-      const { verifyReviewToken } = await import("@/lib/token");
+      const { verifyReviewToken } = tokenModule;
       payload = await verifyReviewToken(token);
+      tokenValid = true;
       
       diagnostic.steps.push({
         step: 4,
@@ -153,15 +156,13 @@ export async function POST(req) {
         status: "error",
         error: error.message
       });
-      
-      // Не возвращаем ошибку сразу, продолжаем диагностику
     }
     
     // Шаг 5: Проверка доступа к Notion
     diagnostic.steps.push({ step: 5, name: "notion_test", status: "starting" });
     
     try {
-      const { notion } = await import("@/lib/notion");
+      const { notion } = notionModule;
       const user = await notion.users.me();
       
       diagnostic.steps.push({
@@ -183,14 +184,14 @@ export async function POST(req) {
       });
     }
     
-    // Шаг 6: Тестирование поиска сотрудников (если токен валиден)
-    const tokenValid = diagnostic.steps.find(s => s.name === "token_verification")?.status === "success";
-    
+    // Шаг 6: Тестирование поиска сотрудников (ИСПРАВЛЕНА ЛОГИКА)
     if (tokenValid && payload) {
       diagnostic.steps.push({ step: 6, name: "find_evaluatees", status: "starting" });
       
       try {
-        const { listEvaluateesForReviewerUser } = await import("@/lib/notion");
+        const { listEvaluateesForReviewerUser } = notionModule;
+        console.log(`[DEBUG] Testing listEvaluateesForReviewerUser for ${payload.reviewerUserId}`);
+        
         const employees = await listEvaluateesForReviewerUser(payload.reviewerUserId);
         
         diagnostic.steps.push({
@@ -208,11 +209,13 @@ export async function POST(req) {
         });
         
         // Шаг 7: Тестирование загрузки навыков (если найдены сотрудники)
+        diagnostic.steps.push({ step: 7, name: "load_skills", status: "starting" });
+        
         if (employees.length > 0) {
-          diagnostic.steps.push({ step: 7, name: "load_skills", status: "starting" });
-          
           try {
-            const { fetchEmployeeSkillRowsForReviewerUser } = await import("@/lib/notion");
+            const { fetchEmployeeSkillRowsForReviewerUser } = notionModule;
+            console.log(`[DEBUG] Testing fetchEmployeeSkillRowsForReviewerUser for ${employees.length} employees`);
+            
             const skillGroups = await fetchEmployeeSkillRowsForReviewerUser(employees, payload.reviewerUserId);
             
             const totalSkills = skillGroups.reduce((sum, group) => sum + (group.items?.length || 0), 0);
@@ -239,6 +242,7 @@ export async function POST(req) {
             });
             
           } catch (skillsError) {
+            console.error(`[DEBUG] Skills loading failed:`, skillsError);
             diagnostic.steps.push({
               step: 7,
               name: "load_skills",
@@ -257,12 +261,21 @@ export async function POST(req) {
         }
         
       } catch (employeeError) {
+        console.error(`[DEBUG] Employee search failed:`, employeeError);
         diagnostic.steps.push({
           step: 6,
           name: "find_evaluatees",
           status: "error",
           error: employeeError.message,
           stack: employeeError.stack?.split('\n').slice(0, 5).join('\n')
+        });
+        
+        // Все равно пытаемся проверить структуру навыков
+        diagnostic.steps.push({
+          step: 7,
+          name: "load_skills",
+          status: "skipped",
+          reason: "Employee search failed"
         });
       }
     } else {
@@ -272,13 +285,19 @@ export async function POST(req) {
         status: "skipped",
         reason: "Token verification failed"
       });
+      diagnostic.steps.push({
+        step: 7,
+        name: "load_skills",
+        status: "skipped",
+        reason: "Token verification failed"
+      });
     }
     
     // Шаг 8: Проверка структуры базы данных
     diagnostic.steps.push({ step: 8, name: "database_structure", status: "starting" });
     
     try {
-      const { notion, MATRIX_DB_ID, EMPLOYEES_DB_ID, PROP } = await import("@/lib/notion");
+      const { notion, MATRIX_DB_ID, EMPLOYEES_DB_ID, PROP } = notionModule;
       
       // Проверяем структуру матрицы
       const matrixDb = await notion.databases.retrieve({ database_id: MATRIX_DB_ID });
@@ -294,6 +313,8 @@ export async function POST(req) {
           employeeType: matrixProps[PROP.employee]?.type,
           hasSkill: !!matrixProps[PROP.skill],
           skillType: matrixProps[PROP.skill]?.type,
+          hasSkillDescription: !!matrixProps[PROP.skillDescription],
+          skillDescriptionType: matrixProps[PROP.skillDescription]?.type,
           hasScorers: {
             selfScorer: !!matrixProps[PROP.selfScorer],
             p1Peer: !!matrixProps[PROP.p1Peer],
@@ -331,6 +352,52 @@ export async function POST(req) {
       });
     }
     
+    // Шаг 9: Тест данных матрицы
+    diagnostic.steps.push({ step: 9, name: "matrix_data_test", status: "starting" });
+    
+    try {
+      const { notion, MATRIX_DB_ID, PROP } = notionModule;
+      
+      // Получаем несколько записей из матрицы для анализа
+      const sampleData = await notion.databases.query({
+        database_id: MATRIX_DB_ID,
+        page_size: 5
+      });
+      
+      const analysis = {
+        totalRows: sampleData.results.length,
+        sampleRows: sampleData.results.map(row => {
+          const props = row.properties;
+          return {
+            id: row.id,
+            employee: props[PROP.employee]?.relation?.[0]?.id || 'empty',
+            skill: props[PROP.skill]?.relation?.[0]?.id || 'empty',
+            selfScorer: props[PROP.selfScorer]?.people?.map(p => p.id) || [],
+            p1Peer: props[PROP.p1Peer]?.people?.map(p => p.id) || [],
+            p2Peer: props[PROP.p2Peer]?.people?.map(p => p.id) || [],
+            managerScorer: props[PROP.managerScorer]?.people?.map(p => p.id) || [],
+            hasSkillDescription: !!(props[PROP.skillDescription]?.rollup || props[PROP.skillDescription]?.rich_text)
+          };
+        })
+      };
+      
+      diagnostic.steps.push({
+        step: 9,
+        name: "matrix_data_test",
+        status: "success",
+        data: analysis
+      });
+      
+    } catch (matrixError) {
+      diagnostic.steps.push({
+        step: 9,
+        name: "matrix_data_test",
+        status: "error",
+        error: matrixError.message
+      });
+    }
+    
+    // Финальная сводка
     diagnostic.summary = {
       allStepsCompleted: diagnostic.steps.every(step => step.status === "success" || step.status === "skipped"),
       totalSteps: diagnostic.steps.length,
@@ -339,65 +406,57 @@ export async function POST(req) {
       recommendations: []
     };
     
-    // Добавляем рекомендации
-    if (diagnostic.summary.errors.length > 0) {
-      const tokenError = diagnostic.summary.errors.find(e => e.name === "token_verification");
-      if (tokenError) {
-        if (tokenError.error.includes("Invalid Compact JWS")) {
-          diagnostic.summary.recommendations.push("Токен поврежден или обрезан. Сгенерируйте новый токен в админ-панели.");
-        } else if (tokenError.error.includes("expired")) {
-          diagnostic.summary.recommendations.push("Токен истек. Сгенерируйте новый токен в админ-панели.");
-        } else if (tokenError.error.includes("JWT_SECRET")) {
-          diagnostic.summary.recommendations.push("Проблема с JWT_SECRET. Проверьте переменные окружения в Cloudflare Pages.");
-        }
-      }
-      
-      const envError = diagnostic.summary.errors.find(e => e.name === "environment");
-      if (envError) {
-        diagnostic.summary.recommendations.push("Настройте переменные окружения в Cloudflare Pages Dashboard.");
-      }
-      
-      const evaluateesError = diagnostic.summary.errors.find(e => e.name === "find_evaluatees");
-      if (evaluateesError) {
-        diagnostic.summary.recommendations.push("Проверьте настройки матрицы компетенций - поля P1_peer, P2_peer, Manager_scorer, Self_scorer должны быть заполнены.");
-      }
-      
-      const skillsError = diagnostic.summary.errors.find(e => e.name === "load_skills");
-      if (skillsError) {
-        diagnostic.summary.recommendations.push("Проверьте связи навыков в матрице компетенций и поле 'Описание навыка'.");
-      }
-      
-      const dbError = diagnostic.summary.errors.find(e => e.name === "database_structure");
-      if (dbError) {
-        diagnostic.summary.recommendations.push("Проверьте доступ к базам данных Notion и их структуру.");
-      }
+    // Генерируем рекомендации на основе результатов
+    const errors = diagnostic.summary.errors;
+    
+    if (errors.some(e => e.name === "find_evaluatees")) {
+      diagnostic.summary.recommendations.push("❌ Критическая проблема: не найдены сотрудники для оценки. Проверьте заполнение полей P1_peer, P2_peer, Manager_scorer, Self_scorer в матрице компетенций.");
     }
     
-    // Проверяем конкретные проблемы
+    if (errors.some(e => e.name === "load_skills")) {
+      diagnostic.summary.recommendations.push("❌ Проблема с загрузкой навыков. Проверьте поле 'Навык' в матрице и связи с базой навыков.");
+    }
+    
     const structureStep = diagnostic.steps.find(s => s.name === "database_structure");
     if (structureStep?.status === "success" && structureStep.data) {
       const structure = structureStep.data;
       
-      if (!structure.matrix.hasEmployee) {
-        diagnostic.summary.recommendations.push(`Добавьте поле "${PROP.employee}" в матрицу компетенций.`);
-      }
-      
-      if (!structure.matrix.hasSkill) {
-        diagnostic.summary.recommendations.push(`Добавьте поле "${PROP.skill}" в матрицу компетенций.`);
-      }
-      
-      if (!structure.employees.hasAccount) {
-        diagnostic.summary.recommendations.push(`Добавьте поле "${PROP.empAccount}" в базу сотрудников.`);
-      }
-      
-      if (!structure.matrix.hasScorers.selfScorer) {
-        diagnostic.summary.recommendations.push(`Добавьте поле "${PROP.selfScorer}" в матрицу компетенций.`);
+      if (!structure.matrix.hasSkillDescription) {
+        diagnostic.summary.recommendations.push("⚠️ Отсутствует поле 'Описание навыка' в матрице. Добавьте rollup поле для отображения информации о навыках.");
       }
     }
     
-    const skillsStep = diagnostic.steps.find(s => s.name === "load_skills");
-    if (skillsStep?.status === "success" && skillsStep.data?.totalSkills === 0) {
-      diagnostic.summary.recommendations.push("Найдены сотрудники, но нет навыков для оценки. Проверьте заполнение матрицы компетенций.");
+    const matrixDataStep = diagnostic.steps.find(s => s.name === "matrix_data_test");
+    if (matrixDataStep?.status === "success" && matrixDataStep.data) {
+      const data = matrixDataStep.data;
+      
+      if (data.totalRows === 0) {
+        diagnostic.summary.recommendations.push("❌ Матрица компетенций пуста. Добавьте записи с сотрудниками и навыками.");
+      } else {
+        const hasEmptyScorers = data.sampleRows.some(row => 
+          row.selfScorer.length === 0 && 
+          row.p1Peer.length === 0 && 
+          row.p2Peer.length === 0 && 
+          row.managerScorer.length === 0
+        );
+        
+        if (hasEmptyScorers) {
+          diagnostic.summary.recommendations.push("⚠️ Найдены записи без назначенных оценивающих. Заполните поля P1_peer, P2_peer, Manager_scorer, Self_scorer.");
+        }
+        
+        if (payload && !data.sampleRows.some(row => 
+          row.selfScorer.includes(payload.reviewerUserId) ||
+          row.p1Peer.includes(payload.reviewerUserId) ||
+          row.p2Peer.includes(payload.reviewerUserId) ||
+          row.managerScorer.includes(payload.reviewerUserId)
+        )) {
+          diagnostic.summary.recommendations.push(`❌ Пользователь ${payload.reviewerUserId} не найден ни в одной из ролей оценивающих. Добавьте его в соответствующие поля матрицы.`);
+        }
+      }
+    }
+    
+    if (diagnostic.summary.recommendations.length === 0 && diagnostic.summary.successfulSteps === diagnostic.summary.totalSteps) {
+      diagnostic.summary.recommendations.push("✅ Все проверки пройдены успешно! Система должна работать корректно.");
     }
     
     return NextResponse.json(diagnostic);
