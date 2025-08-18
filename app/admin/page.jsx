@@ -2,23 +2,6 @@
 
 import { useState, useCallback, useMemo } from "react";
 
-async function parseResponse(res) {
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  if (ct.includes("application/json")) { 
-    try { 
-      return await res.json(); 
-    } catch { 
-      return null; 
-    } 
-  }
-  try { 
-    const t = await res.text(); 
-    return t ? { error: t } : null; 
-  } catch { 
-    return null; 
-  }
-}
-
 export default function OptimizedAdmin() {
   const [teamName, setTeamName] = useState("");
   const [expDays, setExpDays] = useState(14);
@@ -69,13 +52,6 @@ export default function OptimizedAdmin() {
     setErrors({});
     setLoading(true);
     setProgress(0);
-    
-    // Анимация прогресса
-    let p = 0;
-    const timer = setInterval(() => {
-      p = Math.min(90, p + Math.random() * 8);
-      setProgress(p);
-    }, 200);
 
     try {
       const requestData = {
@@ -84,31 +60,45 @@ export default function OptimizedAdmin() {
         adminKey: adminKey.trim()
       };
 
-      console.log('[ADMIN] Generating links for team:', requestData.teamName);
-      
-      const res = await fetch("/api/admin/sign", {
+      const res = await fetch("/api/admin/sign/stream", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": requestData.adminKey
+          "Content-Type": "application/json"
         },
         body: JSON.stringify(requestData)
       });
 
-      const data = await parseResponse(res);
-      
-      if (!res.ok) {
-        const errorMsg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-        throw new Error(errorMsg);
+      if (!res.body) throw new Error("Stream not supported");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+        for (const part of parts) {
+          if (!part.startsWith("data:")) continue;
+          const data = JSON.parse(part.slice(5));
+          if (typeof data.progress === "number") {
+            setProgress(data.progress);
+          }
+          if (data.error) {
+            setMsg(`❌ ${data.error}`);
+          }
+          if (data.done) {
+            const generatedLinks = data.links || [];
+            setLinks(generatedLinks);
+            const successMsg = `✅ Команда: ${data.teamName}. Создано ссылок: ${data.count || generatedLinks.length}`;
+            setMsg(successMsg);
+          }
+        }
       }
 
-      const generatedLinks = data.links || [];
-      setLinks(generatedLinks);
-      
-      const successMsg = `✅ Команда: ${data.teamName}. Создано ссылок: ${data.count || generatedLinks.length}`;
-      setMsg(successMsg);
-      
-      console.log('[ADMIN] Successfully generated', generatedLinks.length, 'links');
+      setProgress(100);
 
     } catch (error) {
       console.error('[ADMIN] Generation failed:', error);
@@ -126,8 +116,6 @@ export default function OptimizedAdmin() {
       
       setMsg(errorMsg);
     } finally {
-      clearInterval(timer);
-      setProgress(100);
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
