@@ -1,28 +1,12 @@
-{
-  "name": "notion-review-app",
-  "compatibility_date": "2024-09-23",
+@@ -4,10 +4,25 @@
   "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": ".vercel/output/static",
-  
-  // Оптимизированные настройки для максимальной производительности
+
+  // Настройки для лучшей совместимости с Edge Runtime
   "limits": {
-    "cpu_ms": 60000,
-    "memory_mb": 128
-  },
-  
-  // Настройки для Edge Runtime
-  "node_compat": true,
-  
-  // Кэширование для статических ресурсов  
-  "rules": [
-    {
-      "action": {
-        "cache": {
-          "cache_level": "cache_everything",
-          "edge_ttl": 86400
-        }
-      },
-      "expression": "http.request.uri.path matches \"^/(_next/static|/favicon\\.ico|/robots\\.txt).*\""
-    }
-  ]
-}
+    "cpu_ms": 50000
+  }
+
+
+  // Удаляем vars секцию, так как переменные уже настроены в Cloudflare Dashboard
+} 
