@@ -1,16 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Оптимизации для Cloudflare Pages
   trailingSlash: true,
   images: { unoptimized: true },
   reactStrictMode: true,
   
-  // Улучшенные настройки для Edge Runtime
+  // Настройки для Edge Runtime
   experimental: {
-    serverComponentsExternalPackages: ['@notionhq/client'],
-    // Отключаем ненужные экспериментальные функции для стабильности
-    appDir: true,
-    runtime: 'edge'
+    serverComponentsExternalPackages: ['@notionhq/client']
   },
   
   // Оптимизация компиляции
@@ -64,10 +60,7 @@ const nextConfig = {
     return config;
   },
   
-  // Настройки для статического экспорта (если потребуется)
   distDir: '.next',
-  
-  // Отключаем функции, которые могут конфликтовать с Edge Runtime
   swcMinify: true,
   
   // Настройки заголовков для кэширования
@@ -93,13 +86,6 @@ const nextConfig = {
       },
     ];
   },
-  
-  // Настройки переписывания для оптимизации
-  async rewrites() {
-    return [
-      // Переписывания при необходимости
-    ];
-  },
 };
 
-export default nextConfig; 
+export default nextConfig;
