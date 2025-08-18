@@ -7,6 +7,7 @@ export default function EnhancedDiagnosticPage() {
   const [results, setResults] = useState(null);
   const [teamName, setTeamName] = useState("");
   const [testToken, setTestToken] = useState("");
+  const [skillIdForTest, setSkillIdForTest] = useState("");
 
   const runFullDiagnostic = async () => {
     setLoading(true);
@@ -236,6 +237,50 @@ export default function EnhancedDiagnosticPage() {
           error: error.message,
           token: testToken.substring(0, 10) + '...',
           description: 'Критическая ошибка загрузки формы'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testSkillDetail = async () => {
+    if (!skillIdForTest.trim()) {
+      alert('Введите ID навыка для тестирования');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      console.log('[DIAGNOSTIC] Тестирование детального анализа навыка:', skillIdForTest);
+
+      const res = await fetch('/api/debug/skill-detail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skillId: skillIdForTest.trim() })
+      });
+
+      const data = await res.json();
+      
+      setResults({
+        skillDetailTest: {
+          status: res.ok ? 'pass' : 'fail',
+          data,
+          skillId: skillIdForTest.trim(),
+          description: res.ok ? 'Детальный анализ навыка завершен' : 'Ошибка анализа навыка'
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      setResults({
+        skillDetailTest: {
+          status: 'fail',
+          error: error.message,
+          skillId: skillIdForTest.trim(),
+          description: 'Критическая ошибка анализа навыка'
         },
         timestamp: new Date().toISOString()
       });
@@ -540,6 +585,56 @@ export default function EnhancedDiagnosticPage() {
           </div>
           <p style={{ fontSize: 12, color: '#6c757d', margin: 0 }}>
             Первая кнопка проверяет диагностические функции, вторая - реальную загрузку формы
+          </p>
+        </div>
+      </div>
+
+      {/* Секция тестирования конкретного навыка */}
+      <div style={{
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 24,
+        marginBottom: 24,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        border: '1px solid #e1e5e9'
+      }}>
+        <h3 style={{ marginBottom: 16, fontSize: 18, color: '#2c3e50', fontWeight: 600 }}>
+          🔬 Детальная диагностика навыка
+        </h3>
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Введите ID навыка из результатов выше (например: 228cefb7-107d-8031-90c6-c6170e1afe38)"
+              style={{
+                padding: '10px 12px',
+                border: '1px solid #ddd',
+                borderRadius: 6,
+                fontSize: 12,
+                width: 400,
+                fontFamily: 'monospace'
+              }}
+              onChange={(e) => setSkillIdForTest(e.target.value)}
+            />
+            <button
+              onClick={testSkillDetail}
+              disabled={loading || !skillIdForTest?.trim()}
+              style={{
+                padding: '10px 16px',
+                background: loading || !skillIdForTest?.trim() ? '#6c757d' : '#e74c3c',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                cursor: loading || !skillIdForTest?.trim() ? 'not-allowed' : 'pointer',
+                fontSize: 14,
+                fontWeight: 500
+              }}
+            >
+              🔬 Анализировать навык
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: '#6c757d', margin: 0 }}>
+            Скопируйте ID любого навыка из результатов диагностики токена для детального анализа проблемы с названиями
           </p>
         </div>
       </div>
