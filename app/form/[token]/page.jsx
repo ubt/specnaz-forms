@@ -380,10 +380,10 @@ export default function ImprovedSkillAssessmentForm({ params }) {
                   reviewerInfo, 
                   stats,
                   roleMapping: {
-                    self: 'Self_score',
-                    manager: 'Manager_score',  
-                    p1_peer: 'P1_score',
-                    p2_peer: 'P2_score'
+                    self: 'Самооценка',
+                    manager: 'Оценка менеджера',  
+                    p1_peer: 'Peer score',
+                    p2_peer: 'Peer score'
                   }
                 }, null, 2)}
               </pre>
