@@ -16,4 +16,4 @@ id = "9d4ff43755a34cdb8559b86a95b2cfa1"          	# Ваш Namespace ID
 
 # Переменные окружения (при необходимости)
 [vars]
-ENVIRONMENT = "production"
+ENVIRONMENT = "production" 
