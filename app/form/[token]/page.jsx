@@ -234,6 +234,9 @@ export default function ImprovedSkillAssessmentForm({ params }) {
               <p className="text-lg text-gray-600 mb-4">
                 Здравствуйте, <span className="font-semibold text-blue-600">{reviewerInfo?.name || 'Ревьюер'}</span>!
               </p>
+              <p className="text-gray-600">
+                Ваша роль: <span className="font-semibold text-green-600">{reviewerInfo?.role || 'peer'}</span>
+              </p>
               <p className="text-gray-600 mt-1">
                 Оцените навыки коллег по шкале от 0 до 5
               </p>
@@ -245,7 +248,13 @@ export default function ImprovedSkillAssessmentForm({ params }) {
                   <div><strong>Всего навыков:</strong> {stats?.totalSkills || 0}</div>
                   <div><strong>Сотрудников:</strong> {stats?.totalEmployees || 0}</div>
                   <div><strong>Оценено:</strong> {scores.size}</div>
-                 <div>
+                  <div><strong>Поле сохранения:</strong> <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                    {reviewerInfo?.role === 'self' ? 'Self_score' : 
+                     reviewerInfo?.role === 'manager' ? 'Manager_score' :
+                     reviewerInfo?.role === 'p1_peer' ? 'P1_score' :
+                     reviewerInfo?.role === 'p2_peer' ? 'P2_score' : 'P1_score'}
+                  </span></div>
+                </div>
               </div>
             </div>
           </div>
@@ -253,7 +262,7 @@ export default function ImprovedSkillAssessmentForm({ params }) {
           {/* Прогресс-бар */}
           <div className="mt-6">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>Прогресс оценки </span>
+              <span>Прогресс оценки</span>
               <span>{scores.size} из {stats?.totalSkills || 0}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
@@ -271,12 +280,12 @@ export default function ImprovedSkillAssessmentForm({ params }) {
         {stats?.employees && stats.employees.length > 0 && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              👥 Сотрудники для оценки ({stats.employees.length}):
+              👥 Сотрудники для оценки ({stats.employees.length})
             </h3>
             <div className="flex flex-wrap gap-3">
               {stats.employees.map((emp, index) => (
                 <div key={index} className="bg-gray-100 px-3 py-2 rounded-lg text-sm">
-                  <strong>{emp.name} - </strong> 
+                  <strong>{emp.name}</strong> 
                   <span className="text-gray-600 ml-2">({emp.role})</span>
                 </div>
               ))}
