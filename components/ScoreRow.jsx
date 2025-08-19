@@ -134,38 +134,35 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
       backgroundColor: isDirty ? '#f8f9fa' : 'white',
       transition: 'background-color 0.2s ease'
     }}>
-      {/* Основная информация о навыке */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr auto',
-        gap: 24,
-        alignItems: 'start'
+      {/* Название навыка */}
+      <h4 style={{
+        fontSize: 16,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        marginBottom: 8,
+        color: '#2c3e50'
       }}>
-        {/* Левая часть - информация о навыке */}
-        <div style={{ minWidth: 0 }}>
-          <h4 style={{ 
-            fontSize: 16,
-            fontWeight: 600, 
-            lineHeight: 1.3,
-            marginBottom: 8,
-            color: '#2c3e50'
-          }}>
-            {item.name}
-          </h4>
-          
+        {item.name}
+      </h4>
+
+      {/* Контент: описание и шкала */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 24
+      }}>
+        {/* Описание навыка */}
+        <div style={{ flex: 1, minWidth: 0 }}>
           {item.description && (
-            <div style={{ marginBottom: 12 }}>
-              <div
-                style={{
-                  color: '#495057',
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word'
-                }}
-              >
-                {item.description}
-              </div>
+            <div style={{
+              marginBottom: 12,
+              color: '#495057',
+              fontSize: 14,
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word'
+            }}>
+              {item.description}
             </div>
           )}
 
@@ -188,18 +185,18 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           )}
         </div>
 
-        {/* Правая часть - элементы управления оценкой */}
+        {/* Шкала оценки */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-end',
           gap: 12,
-          minWidth: 320
+          minWidth: 360
         }}>
           {/* Кнопки оценки */}
           <div style={{
             display: 'flex',
-            gap: 8,
+            gap: 12,
             flexWrap: 'wrap',
             justifyContent: 'flex-end'
           }}>
@@ -218,14 +215,14 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(6, 1fr)',
-            gap: 8,
+            gap: 12,
             fontSize: 11,
             color: '#6c757d',
             textAlign: 'center',
-            maxWidth: 320
+            maxWidth: 360
           }}>
             {Object.values(scoreLabels).map((label, index) => (
-              <div key={index} style={{ 
+              <div key={index} style={{
                 fontWeight: val === index ? 600 : 400,
                 color: val === index ? '#495057' : '#6c757d'
               }}>

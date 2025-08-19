@@ -238,6 +238,11 @@ export default function SkillsAssessmentForm({ params }) {
 
   const ratedSkills = scoreData.size;
 
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const toggleGroup = useCallback((key) => {
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -437,71 +442,89 @@ export default function SkillsAssessmentForm({ params }) {
 
           {/* Форма оценки */}
           <form onSubmit={handleSubmit}>
-            {skillGroups.map((group) => (
-              <div
-                key={`${group.employeeId}_${group.role}`}
-                style={{
-                  backgroundColor: 'white',
-                  borderRadius: 12,
-                  marginBottom: 24,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  overflow: 'hidden'
-                }}
-              >
-                {/* Заголовок группы */}
-                <div style={{
-                  backgroundColor: '#f8f9fa',
-                  padding: 20,
-                  borderBottom: '1px solid #dee2e6'
-                }}>
-                  <h2 style={{ 
-                    fontSize: 20, 
-                    fontWeight: 600, 
-                    color: '#495057',
-                    margin: 0,
-                    marginBottom: 8
-                  }}>
-                    👤 {group.employeeName}
-                  </h2>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16
-                  }}>
-                    <span style={{
-                      backgroundColor: '#007bff',
-                      color: 'white',
-                      padding: '4px 12px',
-                      borderRadius: 16,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      textTransform: 'uppercase'
-                    }}>
-                      {group.role === 'self' ? 'Самооценка' : 
-                       group.role === 'manager' ? 'Оценка менеджера' :
-                       group.role === 'p1_peer' ? 'Peer оценка 1' :
-                       group.role === 'p2_peer' ? 'Peer оценка 2' :
-                       'Peer оценка'}
-                    </span>
-                    <span style={{ color: '#6c757d', fontSize: 14 }}>
-                      {group.items?.length || 0} навыков
+            {skillGroups.map((group) => {
+              const key = `${group.employeeId}_${group.role}`;
+              const isCollapsed = collapsedGroups[key];
+              return (
+                <div
+                  key={key}
+                  style={{
+                    backgroundColor: 'white',
+                    borderRadius: 12,
+                    marginBottom: 24,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {/* Заголовок группы */}
+                  <div
+                    onClick={() => toggleGroup(key)}
+                    style={{
+                      backgroundColor: '#f8f9fa',
+                      padding: 20,
+                      borderBottom: '1px solid #dee2e6',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <h2 style={{
+                        fontSize: 20,
+                        fontWeight: 600,
+                        color: '#495057',
+                        margin: 0,
+                        marginBottom: 8
+                      }}>
+                        👤 {group.employeeName}
+                      </h2>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 16
+                      }}>
+                        <span style={{
+                          backgroundColor: '#007bff',
+                          color: 'white',
+                          padding: '4px 12px',
+                          borderRadius: 16,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textTransform: 'uppercase'
+                        }}>
+                          {group.role === 'self' ? 'Самооценка' :
+                           group.role === 'manager' ? 'Оценка менеджера' :
+                           group.role === 'p1_peer' ? 'Peer оценка 1' :
+                           group.role === 'p2_peer' ? 'Peer оценка 2' :
+                           'Peer оценка'}
+                        </span>
+                        <span style={{ color: '#6c757d', fontSize: 14 }}>
+                          {group.items?.length || 0} навыков
+                        </span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 20, color: '#6c757d' }}>
+                      {isCollapsed ? '▶' : '▼'}
                     </span>
                   </div>
-                </div>
 
-                {/* Список навыков */}
-                <div style={{ padding: '20px 0' }}>
-                  {(group.items || []).map((item) => (
-                    <ScoreRow
-                      key={item.pageId}
-                      item={item}
-                      onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
-                      hideComment={true}
-                    />
-                  ))}
+                  {/* Список навыков */}
+                  {!isCollapsed && (
+                    <div style={{ padding: '20px 0' }}>
+                      {(group.items || []).map((item) => (
+                        <ScoreRow
+                          key={item.pageId}
+                          item={item}
+                          onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
+                          hideComment={true}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Панель действий */}
             <div style={{
