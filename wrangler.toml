@@ -13,7 +13,7 @@ limits = {
 # 🔑 Привязка KV Namespace
 [[kv_namespaces]]
 binding = "NOTION_QUEUE_KV"  						# Имя переменной в коде
-preview_id = "notion-queue-kv"  					# Ваш Namespace ID
+preview_id = "21177d901f444877a24c9eef4a404016"  					# Ваш Namespace ID
 id = "21177d901f444877a24c9eef4a404016"          	# Ваш Namespace ID
 
 # Переменные окружения (при необходимости)
