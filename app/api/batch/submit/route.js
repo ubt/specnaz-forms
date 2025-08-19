@@ -201,7 +201,49 @@ export async function POST(req, context) {
 
     // 7. Выполнение обработки в зависимости от режима
     if (processingMode === 'kv_queue') {
-      return await handleKVQueueProcessing(operations, { ...processorOptions, useKV: true });
+      console.log('[KV QUEUE] Начинаем обработку через Cloudflare KV');
+      try {
+        const { batchId, jobIds } = await addBatchToKVQueue(operations, { ...processorOptions, useKV: true });
+        console.log(`[KV QUEUE] Создано задач: ${jobIds.length}, Batch ID: ${batchId}`);
+        const processor = new NotionBatchProcessor(notion, { ...processorOptions, useKV: true });
+        // Запускаем фоновую обработку и продлеваем выполнение, не дожидаясь её завершения
+        if (context.waitUntil) {
+          context.waitUntil(processor.processKVJobs(jobIds, null).catch(err => {
+            console.error('[KV QUEUE] Ошибка фоновой обработки:', err.message);
+          }));
+        } else {
+          processor.processKVJobs(jobIds, null).catch(err => {
+            console.error('[KV QUEUE] Ошибка фоновой обработки:', err.message);
+          });
+        }
+        return NextResponse.json({
+          success: true,
+          mode: 'kv_queue',
+          batchId: batchId,
+          jobIds: jobIds,
+          totalOperations: operations.length,
+          totalJobs: jobIds.length,
+          estimatedDuration: Math.ceil(operations.length * 2.5),
+          message: `Добавлено ${operations.length} операций в очередь KV. Создано ${jobIds.length} задач.`,
+          statusEndpoint: `/api/batch/status?jobIds=${jobIds.join(',')}`,
+          resultsEndpoint: `/api/batch/results?jobIds=${jobIds.join(',')}`,
+          processorOptions: {
+            batchSize: processorOptions.batchSize,
+            concurrency: processorOptions.concurrency,
+            rateLimitDelay: processorOptions.rateLimitDelay,
+            useKV: true
+          },
+          instructions: {
+           checkStatus: "Используйте statusEndpoint для проверки прогресса",
+            getResults: "После завершения используйте resultsEndpoint для получения результатов",
+            polling: "Проверяйте статус каждые 10-15 секунд"
+          }
+        });
+      } catch (kvError) {
+        console.error('[KV QUEUE] Ошибка KV, переключаемся на прямую обработку:', kvError.message);
+        // Fallback к прямой обработке всех операций
+        return await handleDirectProcessing(operations, { ...processorOptions, useKV: false });
+      }
     } else if (processingMode === 'mixed') {
       const directOps = operations.slice(0, LIMITS.DIRECT_PROCESSING.maxOperations);
       const kvOps = operations.slice(LIMITS.DIRECT_PROCESSING.maxOperations);
@@ -213,8 +255,32 @@ export async function POST(req, context) {
         return NextResponse.json(directData);
       }
 
-      const kvResponse = await handleKVQueueProcessing(kvOps, { ...processorOptions, useKV: true });
-      const kvData = await kvResponse.json();
+      // Запускаем оставшиеся операции через KV очередь
+      let kvData;
+      try {
+        const { batchId, jobIds } = await addBatchToKVQueue(kvOps, { ...processorOptions, useKV: true });
+        console.log(`[KV QUEUE] (mixed) Добавлено в очередь ещё ${jobIds.length} задач, Batch ID: ${batchId}`);
+        const processor = new NotionBatchProcessor(notion, { ...processorOptions, useKV: true });
+        if (context.waitUntil) {
+          context.waitUntil(processor.processKVJobs(jobIds, null).catch(err => console.error('[KV QUEUE] Ошибка фоновой обработки:', err)));
+        } else {
+          processor.processKVJobs(jobIds, null).catch(err => console.error('[KV QUEUE] Ошибка фоновой обработки:', err));
+        }
+        kvData = {
+          success: true,
+          mode: 'kv_queue',
+          batchId: batchId,
+          jobIds: jobIds,
+          totalOperations: kvOps.length,
+          totalJobs: jobIds.length,
+          estimatedDuration: Math.ceil(kvOps.length * 2.5),
+          message: `Оставшиеся ${kvOps.length} операций добавлены в KV очередь (${jobIds.length} задач)`,
+        };
+      } catch (kvError) {
+        console.error('[KV QUEUE] Ошибка при добавлении остатка в KV, выполняем напрямую:', kvError.message);
+        const kvResponseFallback = await handleDirectProcessing(kvOps, { ...processorOptions, useKV: false });
+        kvData = await kvResponseFallback.json();
+      }
 
       return NextResponse.json({
         success: true,
