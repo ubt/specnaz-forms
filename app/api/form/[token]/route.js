@@ -1,6 +1,7 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 
 // Явные импорты модулей, чтобы сборщик включил их в бандл
 async function importTokenModule() {
@@ -427,7 +428,7 @@ export async function POST(req, { params }) {
     }
     
     const { verifyReviewToken } = tokenModule;
-    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
+    const { ROLE_TO_FIELD } = notionModule;
     
     // Проверка токена
     let payload;
@@ -496,43 +497,26 @@ export async function POST(req, { params }) {
 
     console.log(`[FORM POST] Роль из токена: ${role}`);
     
-    // Batch обновление с параллельной отправкой
-    PerformanceTracker?.start('batch-update');
-    const results = [];
-    const BATCH_SIZE = 3;
+    const { env } = getRequestContext();
 
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      const batch = items.slice(i, i + BATCH_SIZE);
+    const sendPromises = items.map((item, idx) => {
+      const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
+      const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
 
-      const batchPromises = batch.map((item, idx) => {
-        const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
-        const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
+      console.log(
+        `[FORM POST] Queueing ${idx + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`
+      );
 
-        console.log(
-          `[FORM POST] Добавление ${i + idx + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`
-        );
+      return env.SCORE_QUEUE.send({ pageId: item.pageId, field, value: item.value });
+    });
 
-        return updateScore(item.pageId, field, item.value).then(() => ({
-          pageId: item.pageId,
-          field,
-          value: item.value,
-        }));
-      });
-
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-    }
-
-    const duration = PerformanceTracker?.end('batch-update') || 0;
-
-    console.log(`[FORM POST] Обновлено ${results.length} элементов за ${duration}ms`);
+    await Promise.all(sendPromises);
 
     const response = {
       ok: true,
-      queued: results.length,
+      queued: items.length,
       reviewerRole: role,
-      duration,
-      message: `Обновлено ${results.length} оценок`
+      message: `Queued ${items.length} оценок`
     };
 
     return NextResponse.json(response);
