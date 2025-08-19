@@ -668,6 +668,7 @@ export default function SkillsAssessmentForm({ params }) {
     }, 15 * 60 * 1000);
   }, [totalSkills]);
 
+// ИСПРАВЛЕННАЯ функция для обработки отправки формы с лучшей обработкой KV
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -683,7 +684,6 @@ export default function SkillsAssessmentForm({ params }) {
     try {
       // Преобразуем scoreData в формат операций для batch API
       const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
-        // Определяем поле для сохранения на основе роли
         const fieldMapping = {
           'self': 'Self_score',
           'p1_peer': 'P1_score', 
@@ -702,35 +702,28 @@ export default function SkillsAssessmentForm({ params }) {
         };
       });
 
-      console.log(`[SUBMIT] Отправляем ${operations.length} операций через новый KV batch API`);
+      console.log(`[SUBMIT] Отправляем ${operations.length} операций через batch API`);
       
-      // Определяем оптимальные настройки на основе количества операций
+      // ИСПРАВЛЕНИЕ: Более консервативные настройки для стабильности
       let batchOptions = {
-        batchSize: 50,
-        concurrency: 3,
-        rateLimitDelay: 2000,
-        maxRetries: 3
+        batchSize: Math.min(operations.length <= 20 ? 20 : 40, 50),
+        concurrency: 2,  // Уменьшено для избежания rate limits
+        rateLimitDelay: operations.length > 30 ? 3000 : 2500,  // Увеличено
+        maxRetries: 3,
+        forceKV: false  // Не принуждаем KV, позволяем системе выбрать
       };
       
+      // Для больших объемов предлагаем KV, но не принуждаем
       if (operations.length > 15) {
-        // Для больших batch операций используем более консервативные настройки
-        batchOptions = {
-          batchSize: 75,
-          concurrency: 2,
-          rateLimitDelay: 2500,
-          maxRetries: 4
-        };
-      } else if (operations.length < 5) {
-        // Для маленьких batch операций используем более агрессивные настройки
-        batchOptions = {
-          batchSize: 25,
-          concurrency: 4,
-          rateLimitDelay: 1500,
-          maxRetries: 3
-        };
+        batchOptions.forceKV = false; // Позволяем системе решить
+        batchOptions.batchSize = 50;
+        batchOptions.concurrency = 2;
+        batchOptions.rateLimitDelay = 3000;
       }
       
-      // Отправляем через новый batch API
+      console.log(`[SUBMIT] Настройки batch:`, batchOptions);
+      
+      // Отправляем через batch API
       const response = await fetch('/api/batch/submit', {
         method: 'POST',
         headers: {
@@ -752,14 +745,14 @@ export default function SkillsAssessmentForm({ params }) {
       console.log('[SUBMIT] Ответ от batch API:', result);
       
       if (result.mode === 'kv_queue') {
-        // Если используются KV очереди, показываем прогресс и начинаем отслеживание
+        // KV очереди используются
         setSubmitMessage(`🔄 Операции добавлены в Cloudflare KV очередь. Создано ${result.totalJobs} задач для обработки ${result.totalOperations} операций.`);
         
         // Запускаем отслеживание прогресса
         trackKVBatchProgress(result.jobIds, result.mode);
         
-      } else if (result.mode === 'direct_processing') {
-        // Прямая обработка завершена немедленно
+      } else if (result.mode === 'direct_processing' || result.mode === 'direct') {
+        // Прямая обработка завершена
         const successRate = result.stats.totalOperations > 0 ?
           (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
 
@@ -774,7 +767,7 @@ export default function SkillsAssessmentForm({ params }) {
           const errorDetails = result.results
             .filter(r => r.status === 'error')
             .slice(0, 3)
-            .map(r => r.error)
+            .map(r => r.error || 'Неизвестная ошибка')
             .join('; ');
 
           setTimeout(() => {
@@ -783,17 +776,6 @@ export default function SkillsAssessmentForm({ params }) {
             );
           }, 2000);
         }
-      } else if (result.mode === 'mixed') {
-        const dStats = result.direct.stats;
-        const successRate = dStats.totalOperations > 0 ?
-          (dStats.successful / dStats.totalOperations * 100).toFixed(1) : 0;
-
-        setSubmitMessage(
-          `⚡ Обработано напрямую: ${dStats.successful}/${dStats.totalOperations} (${successRate}%). ` +
-          `Оставшиеся ${result.kv.totalOperations} операций добавлены в очередь.`
-        );
-
-        trackKVBatchProgress(result.kv.jobIds, 'kv_queue');
       } else {
         // Неизвестный режим
         setSubmitMessage(`✅ Операции отправлены в режиме: ${result.mode}. Проверьте результаты.`);
@@ -806,11 +788,13 @@ export default function SkillsAssessmentForm({ params }) {
       
       // Специальная обработка для известных ошибок
       if (error.message.includes('KV')) {
-        errorMessage += ' (Попробуйте уменьшить количество операций для прямой обработки)';
+        errorMessage += ' (Система автоматически переключилась на прямую обработку)';
       } else if (error.message.includes('rate limit') || error.message.includes('429')) {
         errorMessage = '❌ Превышен лимит запросов. Подождите и попробуйте снова.';
       } else if (error.message.includes('timeout')) {
-        errorMessage = '❌ Тайм-аут операции. Попробуйте уменьшить размер пакета.';
+        errorMessage = '❌ Тайм-аут операции. Попробуйте уменьшить количество одновременно оцениваемых навыков.';
+      } else if (error.message.includes('503')) {
+        errorMessage = '❌ Сервис временно недоступен. Попробуйте позже или уменьшите объем операций.';
       }
       
       setSubmitMessage(errorMessage);
@@ -818,7 +802,6 @@ export default function SkillsAssessmentForm({ params }) {
       setSubmitting(false);
     }
   }, [scoreData, token, trackKVBatchProgress]);
-
   const handleCloseProgressModal = useCallback(() => {
     setShowProgressModal(false);
     setBatchProgress(null);
