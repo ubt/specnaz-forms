@@ -1,34 +1,39 @@
-// app/api/batch/submit/route.js - Исправленный API endpoint для batch операций
+// app/api/batch/submit/route.js - ИСПРАВЛЕННЫЙ API endpoint для batch операций
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 import { verifyReviewToken } from "@/lib/token";
-import { NotionBatchProcessor, addBatchToKVQueue, isKVConnected, initKV, disableKV } from "@/lib/kv-queue";
+import { NotionBatchProcessor, addBatchToKVQueue, isKVConnected, initKV } from "@/lib/kv-queue";
 import { notion } from "@/lib/notion";
 
 // Обновленные лимиты безопасности
 const LIMITS = {
   DIRECT_PROCESSING: {
-    maxOperations: 10,        // Увеличено для лучшего UX
+    maxOperations: 10,
     maxOperationSize: 8000
   },
   KV_QUEUE: {
-    maxOperations: 1000,      // Уменьшено для стабильности  
+    maxOperations: 1000,
     maxOperationSize: 10000
   },
   GENERAL: {
-    maxConcurrency: 3,        // Уменьшено для избежания rate limits
-    minRateLimit: 2000,       // Увеличено для стабильности
+    maxConcurrency: 3,
+    minRateLimit: 2000,
     maxRetries: 3
   }
 };
 
 export async function POST(req, context) {
-  // ИСПРАВЛЕНИЕ: правильная инициализация KV с context.env
-  const kvInitResult = initKV(context?.env || {});
-  console.log(`[BATCH SUBMIT] KV инициализация: ${kvInitResult ? 'успешно' : 'неудачно'}`);
-  
   console.log('[BATCH SUBMIT] ===== Новый запрос на batch обработку =====');
+  
+  // ИСПРАВЛЕНИЕ: Инициализация KV БЕЗ context.env - используем глобальные переменные
+  try {
+    // В Cloudflare Pages KV доступен как глобальная переменная NOTION_QUEUE_KV
+    const kvInitResult = initKV();  // Убираем context.env
+    console.log(`[BATCH SUBMIT] KV инициализация: ${kvInitResult ? 'успешно' : 'неудачно'}`);
+  } catch (initError) {
+    console.warn('[BATCH SUBMIT] Ошибка инициализации KV:', initError.message);
+  }
   
   try {
     // 1. Парсинг и валидация входных данных
@@ -75,34 +80,51 @@ export async function POST(req, context) {
     }
 
     // 3. Валидация операций
-    const { operations, options = {} } = body;
-    
-    if (!operations || !Array.isArray(operations)) {
+    const { operations = [], options = {} } = body;
+
+    if (!Array.isArray(operations) || operations.length === 0) {
       return NextResponse.json(
         { 
-          error: "Поле 'operations' обязательно и должно быть массивом",
-          example: { operations: [{ pageId: "page_id", properties: { "Field": { number: 5 } } }] }
+          error: "Не предоставлены операции для обработки",
+          expected: "Массив операций с полями: pageId, properties"
         },
         { status: 400 }
       );
     }
 
-    if (operations.length === 0) {
-      return NextResponse.json(
-        { error: "Массив операций не может быть пустым" },
-        { status: 400 }
-      );
+    // Валидация каждой операции
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      if (!op.pageId || typeof op.pageId !== 'string') {
+        return NextResponse.json(
+          { 
+            error: `Операция ${i + 1}: некорректный pageId`,
+            details: "pageId должен быть непустой строкой"
+          },
+          { status: 400 }
+        );
+      }
+      
+      if (!op.properties || typeof op.properties !== 'object') {
+        return NextResponse.json(
+          { 
+            error: `Операция ${i + 1}: некорректные properties`,
+            details: "properties должен быть объектом"
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    console.log(`[BATCH SUBMIT] Количество операций: ${operations.length}`);
+    console.log(`[BATCH SUBMIT] Валидация пройдена: ${operations.length} операций`);
 
-    // 4. ИСПРАВЛЕНИЕ: Более точное определение режима обработки
+    // 4. ИСПРАВЛЕНИЕ: Определение режима обработки с правильной проверкой KV
     const kvAvailable = isKVConnected();
     let processingMode = 'direct';
     let limits = LIMITS.DIRECT_PROCESSING;
-    let useKVForce = false;
 
     console.log(`[BATCH SUBMIT] KV доступность: ${kvAvailable}`);
+    console.log(`[BATCH SUBMIT] Количество операций: ${operations.length}`);
 
     // Принудительное использование KV, если запрошено
     const forceKV = options.forceKV === true || body.forceKV === true;
@@ -114,14 +136,18 @@ export async function POST(req, context) {
           {
             error: 'Cloudflare KV недоступно',
             suggestion: 'Убедитесь, что KV namespace привязан или уберите параметр forceKV',
-            kvStatus: 'unavailable'
+            kvStatus: 'unavailable',
+            troubleshooting: {
+              step1: 'Проверьте wrangler.toml: binding = "NOTION_QUEUE_KV"',
+              step2: 'Убедитесь что KV namespace создан в Cloudflare Dashboard',
+              step3: 'Переразверните приложение: npm run cf:deploy'
+            }
           },
           { status: 503 }
         );
       }
       processingMode = 'kv_queue';
       limits = LIMITS.KV_QUEUE;
-      useKVForce = true;
     } else if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations) {
       if (kvAvailable) {
         processingMode = 'kv_queue';
@@ -131,18 +157,22 @@ export async function POST(req, context) {
         console.warn('[BATCH SUBMIT] Большой объем, но KV недоступно');
         return NextResponse.json(
           {
-            error: `Для обработки более ${LIMITS.DIRECT_PROCESSING.maxOperations} операций требуется Cloudflare KV`,
+            error: `Для обработки более ${LIMITS.DIRECT_PROCESSING.maxOperations} операций требуется Cloudflare KV (Система автоматически переключилась на прямую обработку)`,
             suggestion: 'Уменьшите количество операций или настройте Cloudflare KV',
             currentOperations: operations.length,
             maxDirectOperations: LIMITS.DIRECT_PROCESSING.maxOperations,
-            kvStatus: 'unavailable'
+            kvStatus: 'unavailable',
+            troubleshooting: {
+              immediate: `Оцените не более ${LIMITS.DIRECT_PROCESSING.maxOperations} навыков за раз`,
+              longTerm: 'Настройте Cloudflare KV для обработки больших объемов'
+            }
           },
           { status: 503 }
         );
       }
     }
 
-    console.log(`[BATCH SUBMIT] Режим обработки: ${processingMode}, KV доступен: ${kvAvailable}, Принудительный KV: ${useKVForce}`);
+    console.log(`[BATCH SUBMIT] Режим обработки: ${processingMode}, KV доступен: ${kvAvailable}`);
 
     // Проверяем лимиты для выбранного режима
     if (operations.length > limits.maxOperations) {
@@ -161,60 +191,9 @@ export async function POST(req, context) {
       );
     }
 
-    // 5. Детальная валидация операций
-    const validationErrors = [];
-    const sampleSize = Math.min(operations.length, 20); // Уменьшено для быстроты
-    
-    for (let i = 0; i < sampleSize; i++) {
-      const operation = operations[i];
-      const operationNum = i + 1;
-      
-      if (!operation.pageId || typeof operation.pageId !== 'string') {
-        validationErrors.push(`Операция ${operationNum}: отсутствует или некорректен pageId`);
-        continue;
-      }
-      
-      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(operation.pageId)) {
-        validationErrors.push(`Операция ${operationNum}: pageId должен быть в формате UUID`);
-      }
-      
-      if (!operation.properties || typeof operation.properties !== 'object') {
-        validationErrors.push(`Операция ${operationNum}: отсутствует или некорректен объект properties`);
-        continue;
-      }
-      
-      if (Object.keys(operation.properties).length === 0) {
-        validationErrors.push(`Операция ${operationNum}: объект properties не может быть пустым`);
-      }
-      
-      const operationSize = JSON.stringify(operation).length;
-      if (operationSize > limits.maxOperationSize) {
-        validationErrors.push(`Операция ${operationNum}: слишком большой размер (${operationSize} символов, максимум: ${limits.maxOperationSize})`);
-      }
-      
-      if (validationErrors.length >= 10) {
-        validationErrors.push(`... проверено только ${sampleSize} операций из ${operations.length}`);
-        break;
-      }
-    }
-
-    if (validationErrors.length > 0) {
-      return NextResponse.json(
-        { 
-          error: "Ошибки валидации операций",
-          validationErrors: validationErrors,
-          checkedOperations: sampleSize,
-          totalOperations: operations.length
-        },
-        { status: 400 }
-      );
-    }
-
-    console.log('[BATCH SUBMIT] Валидация операций пройдена успешно');
-
-    // 6. Подготовка настроек процессора
+    // 5. Настройка процессора
     const processorOptions = {
-      batchSize: Math.min(options.batchSize || 50, processingMode === 'kv_queue' ? 75 : 25),
+      batchSize: Math.min(options.batchSize || (operations.length <= 25 ? 25 : 50), 75),
       concurrency: Math.min(options.concurrency || 2, LIMITS.GENERAL.maxConcurrency),
       rateLimitDelay: Math.max(options.rateLimitDelay || 2500, LIMITS.GENERAL.minRateLimit),
       maxRetries: Math.min(options.maxRetries || 3, LIMITS.GENERAL.maxRetries),
@@ -225,29 +204,13 @@ export async function POST(req, context) {
 
     console.log('[BATCH SUBMIT] Настройки процессора:', processorOptions);
 
-    // 7. ИСПРАВЛЕНИЕ: Выполнение обработки в зависимости от режима
+    // 6. ИСПРАВЛЕНИЕ: Выполнение обработки в зависимости от режима
     if (processingMode === 'kv_queue') {
       console.log('[KV QUEUE] Начинаем обработку через Cloudflare KV');
       try {
         // Создаем batch в KV
         const { batchId, jobIds } = await addBatchToKVQueue(operations, processorOptions);
         console.log(`[KV QUEUE] Создано задач: ${jobIds.length}, Batch ID: ${batchId}`);
-        
-        // Создаем процессор и запускаем фоновую обработку
-        const processor = new NotionBatchProcessor(notion, processorOptions);
-        
-        // ИСПРАВЛЕНИЕ: Используем правильный способ фоновой обработки
-        const backgroundPromise = processor.processKVJobs(jobIds, null).catch(err => {
-          console.error('[KV QUEUE] Ошибка фоновой обработки:', err.message);
-        });
-
-        // Для Cloudflare Workers/Pages используем context.waitUntil если доступно
-        if (context?.waitUntil) {
-          context.waitUntil(backgroundPromise);
-        } else {
-          // Fallback для других сред
-          backgroundPromise;
-        }
         
         return NextResponse.json({
           success: true,
@@ -272,15 +235,27 @@ export async function POST(req, context) {
             polling: "Проверяйте статус каждые 15-20 секунд"
           }
         });
+        
       } catch (kvError) {
         console.error('[KV QUEUE] Ошибка KV, переключаемся на прямую обработку:', kvError.message);
         
-        // ИСПРАВЛЕНИЕ: При ошибке KV принудительно отключаем его и переходим на прямую обработку
-        console.log('[KV QUEUE] Принудительно отключаем KV и переходим на прямую обработку');
-        
-        // Временно отключаем KV для этого запроса
-        const directOptions = { ...processorOptions, useKV: false };
-        return await handleDirectProcessing(operations, directOptions);
+        // При ошибке KV переходим на прямую обработку
+        if (operations.length <= LIMITS.DIRECT_PROCESSING.maxOperations) {
+          console.log('[KV QUEUE] Принудительно переключаемся на прямую обработку');
+          const directOptions = { ...processorOptions, useKV: false };
+          return await handleDirectProcessing(operations, directOptions);
+        } else {
+          return NextResponse.json(
+            { 
+              error: "Cloudflare KV временно недоступно",
+              suggestion: "Уменьшите количество операций для прямой обработки",
+              fallbackMode: "direct_processing",
+              maxDirectOperations: LIMITS.DIRECT_PROCESSING.maxOperations,
+              currentOperations: operations.length
+            },
+            { status: 503 }
+          );
+        }
       }
     } else {
       // Прямая обработка
@@ -333,146 +308,75 @@ export async function POST(req, context) {
         error: process.env.NODE_ENV === 'development' 
           ? `Внутренняя ошибка: ${error.message}`
           : "Внутренняя ошибка сервера. Попробуйте позже.",
-        timestamp: new Date().toISOString(),
-        requestInfo: {
-          operationCount: body?.operations?.length || 0,
-          kvAvailable: isKVConnected(),
-          mode: 'error'
-        }
+        requestId: Date.now().toString(36)
       },
       { status: 500 }
     );
   }
 }
 
-// ИСПРАВЛЕННАЯ функция прямой обработки
+// ИСПРАВЛЕНИЕ: Вспомогательная функция для прямой обработки
 async function handleDirectProcessing(operations, options) {
-  console.log('[DIRECT] Начинаем прямую обработку');
-  
-  const processor = new NotionBatchProcessor(notion, { ...options, useKV: false });
-  const startTime = Date.now();
+  console.log('[DIRECT PROCESSING] Начинаем прямую обработку');
   
   try {
-    const results = await processor.processBatch(operations, (progress) => {
-      console.log(`[DIRECT] Прогресс: ${progress.processed}/${progress.total} (${progress.progress.toFixed(1)}%)`);
-    });
-
-    const duration = Date.now() - startTime;
-    const successCount = results.results?.filter(r => r.status === 'success').length || 0;
-    const errorCount = results.results?.filter(r => r.status === 'error').length || 0;
-
-    console.log(`[DIRECT] Завершено за ${duration}ms. Успешно: ${successCount}, Ошибок: ${errorCount}`);
+    const processor = new NotionBatchProcessor(notion, options);
+    const result = await processor.processBatchDirectly(operations);
+    
+    const successRate = result.stats.totalOperations > 0 ?
+      (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
 
     return NextResponse.json({
       success: true,
       mode: 'direct_processing',
-      results: results.results || [],
-      stats: {
-        totalOperations: operations.length,
-        successful: successCount,
-        failed: errorCount,
-        duration: duration,
-        averageTimePerOperation: duration / operations.length,
-        processingRate: (operations.length / duration * 1000).toFixed(2)
-      },
-      message: `Прямая обработка завершена. Успешно: ${successCount}, Ошибок: ${errorCount}`,
-      processorOptions: {
-        batchSize: options.batchSize,
-        concurrency: options.concurrency,
-        rateLimitDelay: options.rateLimitDelay,
-        useKV: false
-      },
-      performance: {
-        totalDuration: `${(duration / 1000).toFixed(1)} секунд`,
-        averagePerOperation: `${(duration / operations.length).toFixed(0)} мс/операция`,
-        throughput: `${(operations.length / duration * 1000).toFixed(1)} операций/сек`
-      }
+      results: result.results,
+      stats: result.stats,
+      message: `Прямая обработка завершена! Успешно: ${result.stats.successful}/${result.stats.totalOperations} (${successRate}%). Время: ${(result.stats.duration / 1000).toFixed(1)}с.`,
+      completed: true,
+      timestamp: new Date().toISOString()
     });
-
-  } catch (processingError) {
-    console.error('[DIRECT] Ошибка прямой обработки:', processingError.message);
+    
+  } catch (directError) {
+    console.error('[DIRECT PROCESSING] Ошибка прямой обработки:', directError.message);
     
     return NextResponse.json(
       {
         error: "Ошибка при прямой обработке операций",
-        details: processingError.message,
-        partialResults: processingError.partialResults || [],
-        processingMode: "direct",
-        suggestions: [
-          "Попробуйте уменьшить размер пакета (batchSize)",
-          "Уменьшите одновременность (concurrency)",
-          "Увеличьте задержку между запросами (rateLimitDelay)"
-        ]
+        details: directError.message,
+        mode: 'direct_processing_failed',
+        suggestion: "Попробуйте уменьшить количество операций или повторите позже"
       },
       { status: 500 }
     );
   }
 }
 
-// GET endpoint для получения информации о возможностях системы
+// Диагностический endpoint
 export async function GET(req, context) {
-  // Инициализируем KV для проверки статуса
-  const kvStatus = initKV(context?.env || {});
+  // Инициализация KV для диагностики
+  const kvInitResult = initKV();
   
   return NextResponse.json({
-    service: "Notion Batch Operations API",
-    version: "2.1.0",
-    capabilities: {
-      kvQueues: isKVConnected(),
-      directProcessing: true,
-      maxOperationsKV: LIMITS.KV_QUEUE.maxOperations,
-      maxOperationsDirect: LIMITS.DIRECT_PROCESSING.maxOperations,
-      supportedMethods: ["POST"]
-    },
+    service: "Notion Batch Processing API",
+    status: "operational",
+    runtime: "edge",
+    kvAvailable: isKVConnected(),
+    kvInitialized: kvInitResult,
     limits: LIMITS,
-    kvStatus: {
-      available: isKVConnected(),
-      initialized: kvStatus,
-      namespace: isKVConnected() ? 'NOTION_QUEUE_KV' : 'not_bound'
+    env: {
+      hasNotionToken: !!process.env.NOTION_TOKEN,
+      hasJWTSecret: !!process.env.JWT_SECRET,
+      notionQueueKV: typeof NOTION_QUEUE_KV !== 'undefined' ? 'available' : 'not_bound'
     },
     endpoints: {
       submit: "/api/batch/submit",
       status: "/api/batch/status",
       results: "/api/batch/results"
     },
-    documentation: {
-      requestFormat: {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer <review_token>"
-        },
-        body: {
-          operations: [
-            {
-              pageId: "page-uuid",
-              properties: {
-                "Field_Name": { "number": 5 }
-              }
-            }
-          ],
-          options: {
-            batchSize: 50,
-            concurrency: 2,
-            rateLimitDelay: 2500,
-            maxRetries: 3,
-            forceKV: false
-          }
-        }
-      },
-      statusCodes: {
-        200: "Операции успешно обработаны или добавлены в очередь",
-        400: "Ошибка валидации входных данных",
-        401: "Ошибка авторизации",
-        429: "Превышен лимит запросов",
-        500: "Внутренняя ошибка сервера",
-        503: "Сервис очередей недоступен"
-      },
-      troubleshooting: {
-        kvUnavailable: "Проверьте привязку KV namespace в wrangler.toml",
-        rateLimits: "Уменьшите concurrency и увеличьте rateLimitDelay",
-        largeOperations: "Используйте KV режим для операций > 10"
-      }
+    troubleshooting: {
+      kvUnavailable: "Проверьте привязку KV namespace в wrangler.toml",
+      rateLimits: "Уменьшите concurrency и увеличьте rateLimitDelay",
+      largeOperations: "Используйте KV режим для операций > 10"
     },
     timestamp: new Date().toISOString()
   });
