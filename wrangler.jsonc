@@ -3,22 +3,10 @@
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": ".vercel/output/static",
-  
-  "limits": {
-    "cpu_ms": 60000
-  },
+  "limits": { "cpu_ms": 60000 },
   "queues": {
     "producers": [
-      {
-        "queue": "score-updates",
-        "binding": "SCORE_QUEUE"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "score-updates",
-        "script_name": "score-worker"
-      }
+      { "queue": "score-updates", "binding": "SCORE_QUEUE" }
     ]
   }
 }
