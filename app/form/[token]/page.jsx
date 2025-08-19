@@ -729,6 +729,11 @@ export default function SkillsAssessmentForm({ params }) {
           maxRetries: 3
         };
       }
+
+        // Для больших пакетов принудительно используем Cloudflare KV
+        if (operations.length > 50) {
+          batchOptions.forceKV = true;
+        }
       
       // Отправляем через новый batch API
       const response = await fetch('/api/batch/submit', {
