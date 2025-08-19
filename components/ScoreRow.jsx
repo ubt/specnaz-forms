@@ -124,7 +124,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
     2: "Базовый", 
     3: "Средний",
     4: "Продвинутый",
-    5: "Экспертный"
+    5: "Эксперт"
   };
 
   return (
