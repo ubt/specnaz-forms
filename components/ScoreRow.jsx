@@ -288,7 +288,8 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
                 outline: 'none',
                 cursor: 'pointer',
                 appearance: 'none',
-                WebkitAppearance: 'none'
+                WebkitAppearance: 'none',
+                MozAppearance: 'none'
               }}
               onChange={(e) => handleValueChange(Number(e.target.value))}
               aria-label={`Оценка для ${item.name}`}
@@ -316,38 +317,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           <span>Сохранение изменений...</span>
         </div>
       )}
-
-      {/* CSS для стилизации слайдера */}
-      <style jsx>{`
-        input[type="range"]::-webkit-slider-thumb {
-          appearance: none;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #007bff;
-          cursor: pointer;
-          border: 2px solid white;
-          box-shadow: 0 2px 6px rgba(0,123,255,0.3);
-        }
-        
-        input[type="range"]::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #007bff;
-          cursor: pointer;
-          border: 2px solid white;
-          box-shadow: 0 2px 6px rgba(0,123,255,0.3);
-        }
-        
-        input[type="range"]::-webkit-slider-track {
-          background: transparent;
-        }
-        
-        input[type="range"]::-moz-range-track {
-          background: transparent;
-        }
-      `}</style>
     </div>
   );
 });
