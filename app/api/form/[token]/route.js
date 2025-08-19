@@ -427,7 +427,7 @@ export async function POST(req, { params }) {
     }
     
     const { verifyReviewToken } = tokenModule;
-    const { ROLE_TO_FIELD } = notionModule;
+    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
     
     // Проверка токена
     let payload;
@@ -495,38 +495,47 @@ export async function POST(req, { params }) {
     const items = body.items;
 
     console.log(`[FORM POST] Роль из токена: ${role}`);
+    
+    // Batch обновление с параллельной отправкой
+    PerformanceTracker?.start('batch-update');
+    const results = [];
+    const BATCH_SIZE = 3;
 
-    const queue = process.env.SCORE_QUEUE;
-    if (!queue) {
-      console.error('[FORM POST] Queue binding SCORE_QUEUE is missing');
-      return NextResponse.json(
-        { error: 'Queue binding not configured' },
-        { status: 500 }
-      );
-    }
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
 
-    const messages = items.map(item => ({
-      pageId: item.pageId,
-      value: item.value,
-      role: item.role && ROLE_TO_FIELD[item.role] ? item.role : role
-    }));
+      const batchPromises = batch.map((item, idx) => {
+        const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
+        const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
 
-    try {
-      await queue.sendBatch(messages.map(body => ({ body })));
-      console.log(`[FORM POST] В очередь добавлено ${messages.length} элементов`);
-      return NextResponse.json({
-        ok: true,
-        queued: messages.length,
-        reviewerRole: role,
-        message: `В очередь добавлено ${messages.length} элементов`
+        console.log(
+          `[FORM POST] Добавление ${i + idx + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`
+        );
+
+        return updateScore(item.pageId, field, item.value).then(() => ({
+          pageId: item.pageId,
+          field,
+          value: item.value,
+        }));
       });
-    } catch (err) {
-      console.error('[FORM POST] Ошибка отправки в очередь:', err);
-      return NextResponse.json(
-        { error: 'Ошибка добавления в очередь' },
-        { status: 500 }
-      );
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
     }
+
+    const duration = PerformanceTracker?.end('batch-update') || 0;
+
+    console.log(`[FORM POST] Обновлено ${results.length} элементов за ${duration}ms`);
+
+    const response = {
+      ok: true,
+      queued: results.length,
+      reviewerRole: role,
+      duration,
+      message: `Обновлено ${results.length} оценок`
+    };
+
+    return NextResponse.json(response);
     
   } catch (error) {
     console.error('[FORM POST КРИТИЧЕСКАЯ ОШИБКА]', {

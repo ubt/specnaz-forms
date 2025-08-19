@@ -6,19 +6,5 @@
   
   "limits": {
     "cpu_ms": 60000
-  },
-  "queues": {
-    "producers": [
-      {
-        "queue": "score-updates",
-        "binding": "SCORE_QUEUE"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "score-updates",
-        "script_name": "score-worker"
-      }
-    ]
   }
 }
