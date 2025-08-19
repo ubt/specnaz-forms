@@ -119,10 +119,12 @@ function useSkillsData(token) {
     loading: true,
     error: null,
     scoreData: new Map(),
-    stats: null
+    stats: null,
+    loadTime: 0
   });
 
   const fetchSkills = useCallback(async () => {
+    const start = performance.now();
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
@@ -174,12 +176,13 @@ function useSkillsData(token) {
       const skillGroups = Object.values(grouped);
       console.log(`Загружено ${skillGroups.length} групп навыков`);
       
-      setState(prev => ({ 
-        ...prev, 
-        skillGroups, 
+      setState(prev => ({
+        ...prev,
+        skillGroups,
         loading: false,
         error: null,
-        stats: result.stats
+        stats: result.stats,
+        loadTime: (performance.now() - start) / 1000
       }));
       
     } catch (error) {
@@ -228,6 +231,7 @@ export default function SkillsAssessmentForm({ params }) {
     error,
     scoreData,
     stats,
+    loadTime,
     updateSkillScore,
     refetch
   } = useSkillsData(token);
@@ -618,6 +622,16 @@ export default function SkillsAssessmentForm({ params }) {
           </form>
         </div>
       </StateHandler>
+      {!loading && (
+        <div style={{
+          textAlign: 'center',
+          color: '#6c757d',
+          fontSize: 12,
+          paddingBottom: 24
+        }}>
+          Страница загрузилась за {loadTime.toFixed(2)} сек.
+        </div>
+      )}
     </div>
   );
 }
