@@ -452,8 +452,7 @@ export async function POST(req, { params }) {
     try {
       body = await req.json();
       console.log('[FORM POST] Получены данные:', {
-        itemsCount: body.items?.length || 0,
-        mode: body.mode || 'final'
+        itemsCount: body.items?.length || 0
       });
     } catch (error) {
       console.error('[FORM POST] Ошибка парсинга JSON:', error.message);
@@ -493,7 +492,7 @@ export async function POST(req, { params }) {
       }
     }
     
-    const { items, mode } = { items: body.items, mode: body.mode || "final" };
+    const items = body.items;
 
     console.log(`[FORM POST] Роль из токена: ${role}`);
     
@@ -531,7 +530,6 @@ export async function POST(req, { params }) {
     const response = {
       ok: true,
       queued: results.length,
-      mode,
       reviewerRole: role,
       duration,
       message: `Обновлено ${results.length} оценок`
