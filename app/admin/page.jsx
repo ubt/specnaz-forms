@@ -135,48 +135,36 @@ export default function OptimizedAdmin() {
     }
   }, [teamName, expDays, adminKey, validation.isValid]);
 
-  // Копирование ссылки
-  const copyLink = useCallback(async (url) => {
+  // Экспорт ссылок в Notion
+  const exportToNotion = useCallback(async () => {
+    if (!links.length) return;
+
     try {
-      await navigator.clipboard.writeText(url);
-      setMsg("📋 Ссылка скопирована в буфер обмена");
+      const res = await fetch("/api/admin/export-links", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": adminKey.trim()
+        },
+        body: JSON.stringify({
+          links: links.map(l => ({ userId: l.userId, url: l.url }))
+        })
+      });
+
+      const data = await parseResponse(res);
+
+      if (!res.ok) {
+        const errorMsg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
+        throw new Error(errorMsg);
+      }
+
+      setMsg("✅ Ссылки экспортированы в Notion");
       setTimeout(() => setMsg(""), 2000);
     } catch (error) {
-      console.warn('Clipboard API not available, falling back to selection');
-      // Fallback для старых браузеров
-      const textArea = document.createElement('textarea');
-      textArea.value = url;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setMsg("📋 Ссылка скопирована");
-      setTimeout(() => setMsg(""), 2000);
+      console.error('[EXPORT]', error);
+      setMsg(`❌ ${error.message}`);
     }
-  }, []);
-
-  // Экспорт ссылок в CSV
-  const exportLinks = useCallback(() => {
-    if (!links.length) return;
-    
-    const csvContent = [
-      'Ревьюер,Ссылка',
-      ...links.map(l => `"${l.name}","${l.url}"`)
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `review-links-${teamName.replace(/\s+/g, '-')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    setMsg("📁 Файл CSV загружен");
-    setTimeout(() => setMsg(""), 2000);
-  }, [links, teamName]);
+  }, [links, adminKey]);
 
   const inputStyle = {
     padding: "10px 12px",
@@ -376,7 +364,7 @@ export default function OptimizedAdmin() {
               📋 Сгенерированные ссылки ({links.length})
             </h3>
             <button
-              onClick={exportLinks}
+              onClick={exportToNotion}
               style={{
                 padding: "6px 12px",
                 background: "#28a745",
@@ -388,7 +376,7 @@ export default function OptimizedAdmin() {
                 cursor: "pointer"
               }}
             >
-              💾 Экспорт CSV
+              🧾 Экспорт в Notion
             </button>
           </div>
 
@@ -420,22 +408,11 @@ export default function OptimizedAdmin() {
                   }}>
                     🔗 Ссылка
                   </th>
-                  <th style={{
-                    textAlign: "center",
-                    padding: "12px 8px",
-                    fontWeight: 600,
-                    color: "#495057",
-                    fontSize: 14,
-                    borderBottom: "2px solid #dee2e6",
-                    width: 100
-                  }}>
-                    ⚡ Действия
-                  </th>
                 </tr>
               </thead>
               <tbody>
                 {links.map((link, index) => (
-                  <tr 
+                  <tr
                     key={index}
                     style={{
                       borderBottom: index < links.length - 1 ? "1px solid #f1f3f4" : "none",
@@ -476,29 +453,6 @@ export default function OptimizedAdmin() {
                       >
                         {link.url.length > 60 ? `${link.url.substring(0, 60)}...` : link.url}
                       </a>
-                    </td>
-                    <td style={{
-                      padding: "12px 8px",
-                      textAlign: "center"
-                    }}>
-                      <button
-                        onClick={() => copyLink(link.url)}
-                        style={{
-                          padding: "4px 8px",
-                          background: "#6c757d",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 4,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          transition: "background-color 0.2s ease"
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = "#495057"}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = "#6c757d"}
-                        title="Копировать ссылку"
-                      >
-                        📋 Копировать
-                      </button>
                     </td>
                   </tr>
                 ))}
