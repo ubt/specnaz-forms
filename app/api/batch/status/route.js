@@ -1,15 +1,18 @@
-// app/api/batch/status/route.js - API endpoint для проверки статуса выполнения batch операций в Cloudflare KV
+// app/api/batch/status/route.js - Исправленный API endpoint для проверки статуса batch операций
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 import { getKVBatchStatus, isKVConnected, initKV } from "@/lib/kv-queue";
 
-// Кэш для часто запрашиваемых статусов (в памяти Edge Runtime)
+// Кэш для статусов (уменьшенный TTL для лучшей отзывчивости)
 const statusCache = new Map();
-const CACHE_TTL = 3000; // Кэшируем статусы на 3 секунды (быстрее чем Redis версия)
+const CACHE_TTL = 2000; // 2 секунды для быстрого обновления
 
 export async function GET(req, context) {
-  initKV(context.env);
+  // ИСПРАВЛЕНИЕ: Правильная инициализация KV
+  const kvInitResult = initKV(context?.env || {});
+  console.log(`[BATCH STATUS] KV инициализация: ${kvInitResult ? 'успешно' : 'неудачно'}`);
+  
   console.log('[BATCH STATUS] Получен GET запрос на проверку статуса');
   
   try {
@@ -31,7 +34,8 @@ export async function GET(req, context) {
         { 
           error: "Параметр 'jobIds' обязателен",
           usage: "Укажите ID задач через запятую: ?jobIds=job1,job2,job3",
-          example: "/api/batch/status?jobIds=job_123,job_456&detailed=true"
+          example: "/api/batch/status?jobIds=job_123,job_456&detailed=true",
+          kvStatus: isKVConnected() ? 'available' : 'unavailable'
         },
         { status: 400 }
       );
@@ -46,11 +50,11 @@ export async function GET(req, context) {
       );
     }
 
-    if (jobIdArray.length > 100) {
+    if (jobIdArray.length > 50) { // Уменьшен лимит для стабильности
       return NextResponse.json(
         { 
           error: "Слишком много ID задач",
-          details: `Предоставлено: ${jobIdArray.length}, максимум: 100`,
+          details: `Предоставлено: ${jobIdArray.length}, максимум: 50`,
           suggestion: "Разбейте запрос на несколько частей"
         },
         { status: 400 }
@@ -59,14 +63,24 @@ export async function GET(req, context) {
 
     console.log(`[BATCH STATUS] Проверяем статус ${jobIdArray.length} задач`);
 
-    // Проверяем доступность Cloudflare KV
+    // ИСПРАВЛЕНИЕ: Более надежная проверка доступности KV
     if (!isKVConnected()) {
       return NextResponse.json({
         error: "Cloudflare KV недоступно",
         message: "Сервис очередей временно недоступен. Статус задач невозможно получить.",
         kvConnected: false,
         jobIds: jobIdArray,
-        fallbackSuggestion: "Используйте прямую обработку для новых операций"
+        possibleCauses: [
+          "KV namespace не привязан к Functions",
+          "Неправильная конфигурация wrangler.toml",
+          "KV namespace не создан в Cloudflare Dashboard"
+        ],
+        fallbackSuggestion: "Используйте прямую обработку для новых операций",
+        troubleshooting: {
+          checkBinding: "Проверьте NOTION_QUEUE_KV в wrangler.toml",
+          checkNamespace: "Убедитесь что KV namespace создан",
+          checkDeployment: "Переразверните приложение после изменений"
+        }
       }, { status: 503 });
     }
 
@@ -83,10 +97,18 @@ export async function GET(req, context) {
       });
     }
 
-    // Получаем статусы задач из KV
+    // ИСПРАВЛЕНИЕ: Получаем статусы задач из KV с обработкой ошибок
     let statuses;
     try {
+      console.log(`[BATCH STATUS] Запрашиваем статусы для ${jobIdArray.length} задач из KV`);
       statuses = await getKVBatchStatus(jobIdArray);
+      
+      if (!statuses) {
+        console.warn('[BATCH STATUS] getKVBatchStatus вернул null');
+        throw new Error('Не удалось получить статусы из KV');
+      }
+      
+      console.log(`[BATCH STATUS] Получено ${statuses.length} статусов из KV`);
     } catch (kvError) {
       console.error('[BATCH STATUS] Ошибка KV:', kvError.message);
       
@@ -95,21 +117,32 @@ export async function GET(req, context) {
         details: kvError.message,
         jobIds: jobIdArray,
         kvConnected: isKVConnected(),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        possibleCauses: [
+          "Задачи не существуют в KV",
+          "Данные устарели и были удалены", 
+          "Временная проблема с KV доступом",
+          "Неправильные Job IDs"
+        ],
+        suggestions: [
+          "Проверьте корректность Job IDs",
+          "Попробуйте позже (данные могут еще загружаться)",
+          "Создайте новые batch операции"
+        ]
       }, { status: 503 });
     }
 
-    if (!statuses) {
+    if (statuses.length === 0) {
       return NextResponse.json({
-        error: "Не удалось получить статусы задач",
+        error: "Не найдено задач с указанными ID",
         jobIds: jobIdArray,
         kvConnected: isKVConnected(),
         possibleCauses: [
           "Задачи не существуют",
           "Данные устарели и были удалены",
-          "Временная проблема с KV"
+          "Неправильные Job IDs"
         ]
-      }, { status: 500 });
+      }, { status: 404 });
     }
 
     // Анализируем статусы
@@ -122,6 +155,7 @@ export async function GET(req, context) {
       kvConnected: isKVConnected(),
       totalJobs: statuses.length,
       requestedJobs: jobIdArray.length,
+      foundJobs: statuses.filter(s => s.status !== 'not_found').length,
       ...analysis
     };
 
@@ -140,7 +174,7 @@ export async function GET(req, context) {
       }));
     }
 
-    // Добавляем результаты если запрошены
+    // ИСПРАВЛЕНИЕ: Добавляем результаты если запрошены и есть завершенные задачи
     if (includeResults && analysis.completedJobs > 0) {
       try {
         const { getKVBatchResults } = await import("@/lib/kv-queue");
@@ -149,18 +183,29 @@ export async function GET(req, context) {
           .map(job => job.id);
         
         if (completedJobIds.length > 0) {
+          console.log(`[BATCH STATUS] Загружаем результаты для ${completedJobIds.length} завершенных задач`);
           const results = await getKVBatchResults(completedJobIds);
           response.results = results;
           response.resultsCount = results ? results.length : 0;
+          
+          if (results) {
+            response.resultsSummary = {
+              total: results.length,
+              successful: results.filter(r => r.status === 'success').length,
+              failed: results.filter(r => r.status === 'error').length
+            };
+          }
         }
       } catch (resultsError) {
         console.error('[BATCH STATUS] Ошибка получения результатов:', resultsError.message);
         response.resultsError = "Не удалось загрузить результаты";
+        response.resultsErrorDetails = resultsError.message;
       }
     }
 
     // Добавляем рекомендации и следующие шаги
     response.recommendations = generateRecommendations(analysis, statuses);
+    response.nextSteps = generateNextSteps(analysis);
 
     // Кэшируем результат
     statusCache.set(cacheKey, {
@@ -188,12 +233,17 @@ export async function GET(req, context) {
         : "Ошибка получения статуса задач",
       timestamp: new Date().toISOString(),
       kvConnected: isKVConnected(),
-      suggestion: "Попробуйте повторить запрос через несколько секунд"
+      suggestion: "Попробуйте повторить запрос через несколько секунд",
+      debug: process.env.NODE_ENV === 'development' ? {
+        stack: error.stack?.split('\n').slice(0, 5).join('\n')
+      } : undefined
     }, { status: 500 });
   }
 }
 
-export async function POST(req) {
+export async function POST(req, context) {
+  // Инициализируем KV
+  initKV(context?.env || {});
   console.log('[BATCH STATUS] POST запрос - массовая проверка статуса');
   
   try {
@@ -217,11 +267,11 @@ export async function POST(req) {
       );
     }
 
-    if (jobIds.length > 200) {
+    if (jobIds.length > 100) { // Уменьшен лимит
       return NextResponse.json(
         { 
           error: "Слишком много ID задач для POST запроса",
-          details: `Предоставлено: ${jobIds.length}, максимум: 200`,
+          details: `Предоставлено: ${jobIds.length}, максимум: 100`,
           suggestion: "Используйте GET запросы для больших списков или разбейте на части"
         },
         { status: 400 }
@@ -376,7 +426,7 @@ function analyzeJobStatuses(statuses) {
   // Простая оценка времени до завершения
   if (analysis.processingJobs > 0 && analysis.overallProgress > 0 && analysis.overallProgress < 100) {
     const remainingProgress = 100 - analysis.overallProgress;
-    const estimatedSeconds = (remainingProgress / analysis.overallProgress) * 60; // Примерно 1 минута на 1% прогресса
+    const estimatedSeconds = (remainingProgress / analysis.overallProgress) * 90; // Примерно 1.5 минуты на 1%
     analysis.estimatedTimeRemaining = Math.ceil(estimatedSeconds);
   }
 
@@ -615,8 +665,16 @@ function generateRecommendations(analysis, statuses) {
   if (analysis.estimatedTimeRemaining) {
     recommendations.push({
       type: 'info',
-      message: `Приблизительное время до завершения: ${analysis.estimatedTimeRemaining} секунд`,
+      message: `Приблизительное время до завершения: ${Math.ceil(analysis.estimatedTimeRemaining / 60)} минут`,
       action: 'Проверьте статус через рекомендуемое время'
+    });
+  }
+
+  if (analysis.notFoundJobs > 0) {
+    recommendations.push({
+      type: 'warning',
+      message: `${analysis.notFoundJobs} задач не найдено`,
+      action: 'Проверьте корректность Job IDs или создайте новые задачи'
     });
   }
 
@@ -631,7 +689,7 @@ function generateNextSteps(analysis) {
     steps.push({
       step: 1,
       action: 'Продолжить мониторинг',
-      description: 'Проверяйте статус каждые 10-15 секунд',
+      description: 'Проверяйте статус каждые 15-20 секунд',
       endpoint: 'GET /api/batch/status'
     });
   }
@@ -654,6 +712,15 @@ function generateNextSteps(analysis) {
     });
   }
 
+  if (analysis.notFoundJobs > 0) {
+    steps.push({
+      step: steps.length + 1,
+      action: 'Проверить Job IDs',
+      description: 'Убедитесь в корректности переданных идентификаторов задач',
+      suggestion: 'Возможно, задачи были удалены или неправильно переданы'
+    });
+  }
+
   return steps;
 }
 
@@ -669,12 +736,12 @@ function cleanupStatusCache() {
   }
 
   // Ограничиваем размер кэша
-  if (statusCache.size > 50) {
+  if (statusCache.size > 20) { // Уменьшен размер кэша
     const entries = Array.from(statusCache.entries());
     entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
     
     statusCache.clear();
-    entries.slice(0, 25).forEach(([key, value]) => {
+    entries.slice(0, 10).forEach(([key, value]) => {
       statusCache.set(key, value);
     });
   }
