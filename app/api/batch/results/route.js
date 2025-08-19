@@ -2,14 +2,13 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { getKVBatchResults, getKVBatchStatus, isKVConnected, initKV } from "@/lib/kv-queue";
+import { getKVBatchResults, getKVBatchStatus, isKVConnected } from "@/lib/kv-queue";
 
 // Кэш для результатов (они меняются реже чем статус)
 const resultsCache = new Map();
 const CACHE_TTL = 10000; // Кэшируем результаты на 10 секунд
 
-export async function GET(req, context) {
-  initKV(context.env);
+export async function GET(req) {
   console.log('[BATCH RESULTS] Получен запрос на результаты batch операций');
   
   try {

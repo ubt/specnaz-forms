@@ -3,7 +3,7 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 import { verifyReviewToken } from "@/lib/token";
-import { NotionBatchProcessor, addBatchToKVQueue, isKVConnected, initKV } from "@/lib/kv-queue";
+import { NotionBatchProcessor, addBatchToKVQueue, isKVConnected } from "@/lib/kv-queue";
 import { notion } from "@/lib/notion";
 
 // Лимиты безопасности для разных режимов обработки
@@ -23,8 +23,7 @@ const LIMITS = {
   }
 };
 
-export async function POST(req, context) {
-  initKV(context.env);
+export async function POST(req) {
   console.log('[BATCH SUBMIT] ===== Новый запрос на batch обработку =====');
   
   try {
@@ -401,8 +400,7 @@ async function handleDirectProcessing(operations, options) {
 }
 
 // GET endpoint для получения информации о возможностях системы
-export async function GET(req, context) {
-  initKV(context.env);
+export async function GET() {
   return NextResponse.json({
     service: "Notion Batch Operations API",
     version: "2.0.0",
