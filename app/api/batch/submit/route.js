@@ -100,11 +100,13 @@ export async function POST(req) {
     // Принудительное использование KV, если запрошено
     const forceKV = options.forceKV === true || body.forceKV === true;
 
-    if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations && kvAvailable) {
-      // Будем использовать смешанный режим: часть операций напрямую, остальные через KV
+     if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations) {
+      // Для количества операций больше 5 используем смешанный режим
       processingMode = 'mixed';
       limits = LIMITS.KV_QUEUE;
-    } else if (kvAvailable && forceKV) {
+        }
+    if (forceKV) {
+      // При явном указании используем только KV
       processingMode = 'kv_queue';
       limits = LIMITS.KV_QUEUE;
     }
