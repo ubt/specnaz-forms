@@ -427,7 +427,7 @@ export async function POST(req, { params }) {
     }
     
     const { verifyReviewToken } = tokenModule;
-    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
+    const { queueScoreUpdate, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
     
     // Проверка токена
     let payload;
@@ -500,82 +500,34 @@ export async function POST(req, { params }) {
     // Batch обновление
     PerformanceTracker?.start('batch-update');
     const results = [];
-    const errors = [];
-    
+
     for (const [index, item] of items.entries()) {
       const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
       const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
 
-      try {
-        console.log(`[FORM POST] Обновление элемента ${index + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`);
+      console.log(`[FORM POST] Добавление в очередь ${index + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`);
+      queueScoreUpdate(item.pageId, field, item.value);
 
-        await updateScore(
-          item.pageId,
-          field,
-          item.value,
-          "",
-          null
-        );
-
-        results.push({
-          pageId: item.pageId,
-          success: true,
-          field,
-          value: item.value
-        });
-
-        console.log(`[FORM POST] ✅ Успешно обновлен ${item.pageId}: ${field} = ${item.value}`);
-
-      } catch (error) {
-        console.error(`[FORM POST] ❌ Ошибка обновления ${item.pageId}:`, error.message);
-        errors.push({
-          pageId: item.pageId,
-          error: error.message,
-          field,
-          value: item.value
-        });
-        
-        // Для критических ошибок прерываем процесс
-        if (error.status === 401 || error.status === 403) {
-          throw error;
-        }
-        
-        // Для ошибок rate limit делаем паузу и продолжаем
-        if (error.status === 429) {
-          console.log('[FORM POST] Rate limit hit, waiting 2 seconds...');
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
+      results.push({
+        pageId: item.pageId,
+        field,
+        value: item.value
+      });
     }
-    
+
     const duration = PerformanceTracker?.end('batch-update') || 0;
-    
-    console.log(`[FORM POST] Batch обновление завершено за ${duration}ms: ${results.length} успешно, ${errors.length} ошибок`);
-    
+
+    console.log(`[FORM POST] В очередь добавлено ${results.length} элементов за ${duration}ms`);
+
     const response = {
       ok: true,
-      updated: results.length,
-      failed: errors.length,
+      queued: results.length,
       mode,
       reviewerRole: role,
-      duration
+      duration,
+      message: `Добавлено в очередь ${results.length} оценок`
     };
-    
-    // Добавляем детали ошибок если есть
-    if (errors.length > 0) {
-      response.errors = errors;
-      response.message = `Обновлено ${results.length} из ${items.length} записей. ${errors.length} ошибок.`;
-      
-      if (process.env.NODE_ENV === 'development') {
-        response.debug = {
-          errorSample: errors.slice(0, 3), // Первые 3 ошибки для отладки
-          successSample: results.slice(0, 3) // Первые 3 успешных для отладки
-        };
-      }
-    } else {
-      response.message = `Все ${results.length} оценок успешно сохранены`;
-    }
-    
+
     return NextResponse.json(response);
     
   } catch (error) {

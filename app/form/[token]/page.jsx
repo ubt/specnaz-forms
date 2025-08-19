@@ -285,11 +285,7 @@ export default function SkillsAssessmentForm({ params }) {
       }
 
       if (result.ok) {
-        setSubmitMessage(`✅ Успешно сохранено ${result.updated} оценок!`);
-        
-        if (result.failed > 0) {
-          setSubmitMessage(prev => prev + ` (${result.failed} ошибок)`);
-        }
+        setSubmitMessage(`✅ Успешно сохранено ${result.queued} оценок!`);
       } else {
         throw new Error(result.error || 'Неизвестная ошибка');
       }
@@ -339,7 +335,7 @@ export default function SkillsAssessmentForm({ params }) {
       }
 
       if (result.ok) {
-        setSubmitMessage(`💾 Черновик сохранен (${result.updated} оценок)`);
+        setSubmitMessage(`💾 Черновик сохранен (${result.queued} оценок)`);
       }
       
     } catch (error) {
