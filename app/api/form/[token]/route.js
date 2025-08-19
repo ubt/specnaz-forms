@@ -107,10 +107,11 @@ export async function GET(req, { params }) {
     
     // Проверяем что все нужные экспорты доступны
     const { verifyReviewToken } = tokenModule;
-    const { 
-      listEvaluateesForReviewerUser, 
+    const {
+      listEvaluateesForReviewerUser,
       fetchEmployeeSkillRowsForReviewerUser,
-      PerformanceTracker 
+      getEmployeeNamesByUserIds,
+      PerformanceTracker
     } = notionModule;
     
     if (!verifyReviewToken) {
@@ -149,13 +150,21 @@ export async function GET(req, { params }) {
     }
     
     const { reviewerUserId, role } = payload;
-    
+
     if (!reviewerUserId) {
       console.error('[FORM GET] Отсутствует reviewerUserId в токене:', payload);
       return NextResponse.json(
-        { error: "Некорректный токен: отсутствует ID ревьюера" }, 
+        { error: "Некорректный токен: отсутствует ID ревьюера" },
         { status: 400 }
       );
+    }
+
+    let reviewerName = reviewerUserId;
+    try {
+      const nameMap = await getEmployeeNamesByUserIds([reviewerUserId]);
+      reviewerName = nameMap.get(reviewerUserId) || reviewerUserId;
+    } catch (e) {
+      console.warn('[FORM GET] Не удалось получить имя ревьюера:', e.message);
     }
     
     // Загрузка сотрудников для оценки
@@ -296,6 +305,7 @@ export async function GET(req, { params }) {
         totalEmployees: employees.length,
         totalSkills,
         reviewerRole: role || 'peer',
+        reviewerName,
         employeeBreakdown: employees.map(e => ({
           employeeId: e.employeeId,
           employeeName: e.employeeName,
@@ -465,29 +475,27 @@ export async function POST(req, { params }) {
     for (const [index, item] of body.items.entries()) {
       if (!item.pageId || typeof item.value !== 'number' || item.value < 0 || item.value > 5) {
         return NextResponse.json(
-          { 
+          {
             error: `Некорректный элемент ${index + 1}: требуется pageId и value от 0 до 5`,
             receivedItem: item
-          }, 
+          },
+          { status: 400 }
+        );
+      }
+      if (item.role && !ROLE_TO_FIELD[item.role]) {
+        return NextResponse.json(
+          {
+            error: `Некорректная роль в элементе ${index + 1}`,
+            receivedItem: item
+          },
           { status: 400 }
         );
       }
     }
     
     const { items, mode } = { items: body.items, mode: body.mode || "final" };
-    
-    // ИСПРАВЛЕНО: Определение правильного поля для обновления на основе роли из токена
-    let scoreField;
-    
-    if (role && ROLE_TO_FIELD[role]) {
-      scoreField = ROLE_TO_FIELD[role];
-    } else {
-      // Fallback если роль не определена или не найдена
-      scoreField = ROLE_TO_FIELD.peer;
-      console.warn(`[FORM POST] Unknown role "${role}", using fallback field: ${scoreField}`);
-    }
-    
-    console.log(`[FORM POST] Роль ревьюера: ${role}, используемое поле: ${scoreField}`);
+
+    console.log(`[FORM POST] Роль из токена: ${role}`);
     
     // Batch обновление
     PerformanceTracker?.start('batch-update');
@@ -495,32 +503,35 @@ export async function POST(req, { params }) {
     const errors = [];
     
     for (const [index, item] of items.entries()) {
+      const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
+      const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
+
       try {
-        console.log(`[FORM POST] Обновление элемента ${index + 1}/${items.length}: ${item.pageId} = ${item.value}`);
-        
+        console.log(`[FORM POST] Обновление элемента ${index + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`);
+
         await updateScore(
-          item.pageId, 
-          scoreField, 
-          item.value, 
-          "", // Комментарии пока не используем
-          null // Поле комментариев пока не обновляем
+          item.pageId,
+          field,
+          item.value,
+          "",
+          null
         );
-        
-        results.push({ 
-          pageId: item.pageId, 
+
+        results.push({
+          pageId: item.pageId,
           success: true,
-          field: scoreField,
+          field,
           value: item.value
         });
-        
-        console.log(`[FORM POST] ✅ Успешно обновлен ${item.pageId}: ${scoreField} = ${item.value}`);
-        
+
+        console.log(`[FORM POST] ✅ Успешно обновлен ${item.pageId}: ${field} = ${item.value}`);
+
       } catch (error) {
         console.error(`[FORM POST] ❌ Ошибка обновления ${item.pageId}:`, error.message);
-        errors.push({ 
-          pageId: item.pageId, 
+        errors.push({
+          pageId: item.pageId,
           error: error.message,
-          field: scoreField,
+          field,
           value: item.value
         });
         
@@ -546,7 +557,6 @@ export async function POST(req, { params }) {
       updated: results.length,
       failed: errors.length,
       mode,
-      field: scoreField,
       reviewerRole: role,
       duration
     };
@@ -563,7 +573,7 @@ export async function POST(req, { params }) {
         };
       }
     } else {
-      response.message = `Все ${results.length} оценок успешно сохранены в поле ${scoreField}`;
+      response.message = `Все ${results.length} оценок успешно сохранены`;
     }
     
     return NextResponse.json(response);

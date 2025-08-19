@@ -114,10 +114,8 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
     debouncedChange(clampedVal);
   }, [debouncedChange]);
   
-  // Уведомляем родителя о начальных значениях
-  useEffect(() => {
-    debouncedChange(val);
-  }, []);
+  // Уведомление о начальных значениях убрано, чтобы прогресс оценок
+  // начинался с нуля и учитывал только измененные пользователем навыки
   
   
   const scoreLabels = {

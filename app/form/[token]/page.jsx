@@ -166,7 +166,8 @@ function useSkillsData(token) {
           pageId: row.pageId,
           name: row.name,
           description: row.description,
-          current: row.current
+          current: row.current,
+          role: row.role
         });
       }
 
@@ -192,10 +193,10 @@ function useSkillsData(token) {
     }
   }, [token]);
 
-  const updateSkillScore = useCallback((pageId, value) => {
+  const updateSkillScore = useCallback((pageId, role, value) => {
     setState(prev => {
       const newScoreData = new Map(prev.scoreData);
-      newScoreData.set(pageId, { value });
+      newScoreData.set(pageId, { value, role });
       return {
         ...prev,
         scoreData: newScoreData
@@ -251,7 +252,8 @@ export default function SkillsAssessmentForm({ params }) {
     try {
       const items = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => ({
         pageId,
-        value: scoreInfo.value
+        value: scoreInfo.value,
+        role: scoreInfo.role
       }));
 
       console.log('Отправка оценки:', items);
@@ -285,7 +287,10 @@ export default function SkillsAssessmentForm({ params }) {
       
     } catch (error) {
       console.error('Ошибка отправки:', error);
-      setSubmitMessage(`❌ Ошибка отправки: ${error.message}`);
+      const msg = error.message === 'Failed to fetch'
+        ? 'не удалось связаться с сервером'
+        : error.message;
+      setSubmitMessage(`❌ Ошибка отправки: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -303,7 +308,8 @@ export default function SkillsAssessmentForm({ params }) {
     try {
       const items = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => ({
         pageId,
-        value: scoreInfo.value
+        value: scoreInfo.value,
+        role: scoreInfo.role
       }));
 
       const response = await fetch(`/api/form/${token}`, {
@@ -329,7 +335,10 @@ export default function SkillsAssessmentForm({ params }) {
       
     } catch (error) {
       console.error('Ошибка сохранения черновика:', error);
-      setSubmitMessage(`❌ Ошибка сохранения: ${error.message}`);
+      const msg = error.message === 'Failed to fetch'
+        ? 'не удалось связаться с сервером'
+        : error.message;
+      setSubmitMessage(`❌ Ошибка сохранения: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -369,15 +378,24 @@ export default function SkillsAssessmentForm({ params }) {
             }}>
               📊 Форма оценки компетенций
             </h1>
-            <p style={{ 
-              color: '#6c757d', 
+            <div style={{
+              color: '#6c757d',
               marginBottom: 16,
               fontSize: 16,
               lineHeight: 1.5
             }}>
               Оцените уровень владения навыками по шкале от 0 до 5
-            </p>
-            
+            </div>
+            {stats?.reviewerName && (
+              <div style={{
+                color: '#495057',
+                fontSize: 16,
+                fontWeight: 600
+              }}>
+                Ревьювер: {stats.reviewerName}
+              </div>
+            )}
+
           </div>
 
           {/* Прогресс-бар */}
@@ -420,7 +438,7 @@ export default function SkillsAssessmentForm({ params }) {
           {/* Форма оценки */}
           <form onSubmit={handleSubmit}>
             {skillGroups.map((group) => (
-              <div 
+              <div
                 key={`${group.employeeId}_${group.role}`}
                 style={{
                   backgroundColor: 'white',
@@ -477,7 +495,7 @@ export default function SkillsAssessmentForm({ params }) {
                     <ScoreRow
                       key={item.pageId}
                       item={item}
-                      onChange={({ value }) => updateSkillScore(item.pageId, value)}
+                      onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
                       hideComment={true}
                     />
                   ))}
