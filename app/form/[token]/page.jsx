@@ -245,8 +245,7 @@ export default function ImprovedSkillAssessmentForm({ params }) {
                   <div><strong>Всего навыков:</strong> {stats?.totalSkills || 0}</div>
                   <div><strong>Сотрудников:</strong> {stats?.totalEmployees || 0}</div>
                   <div><strong>Оценено:</strong> {scores.size}</div>
-                 <div>
-              </div>
+               </div>
             </div>
           </div>
 
