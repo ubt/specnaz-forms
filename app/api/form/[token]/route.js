@@ -27,19 +27,6 @@ async function importNotionModule() {
   }
 }
 
-// Импорт модуля работы с очередями Cloudflare KV
-async function importKVModule() {
-  try {
-    console.log('[IMPORT] Импорт модуля KV очередей...');
-    const module = await import("@/lib/kv-queue");
-    console.log('[IMPORT] KV модуль импортирован');
-    return module;
-  } catch (error) {
-    console.error('[IMPORT] Ошибка импорта KV модуля:', error);
-    throw new Error(`Ошибка импорта модуля: '@/lib/kv-queue' - ${error.message}`);
-  }
-}
-
 // Проверка окружения
 function validateRuntimeEnvironment() {
   const checks = {
@@ -509,73 +496,46 @@ export async function POST(req, { params }) {
 
     console.log(`[FORM POST] Роль из токена: ${role}`);
     
-    // Подготовка операций в формате batch API Notion
-    const operations = items.map(item => {
-      const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
-      const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
-
-      return {
-        pageId: item.pageId,
-        properties: {
-          [field]: { number: item.value }
-        }
-      };
-    });
-
-    // Импортируем модуль очередей KV
-    let kvModule;
-    try {
-      kvModule = await importKVModule();
-    } catch (kvError) {
-      console.warn('[FORM POST] KV модуль недоступен:', kvError.message);
-    }
-
-    const { NotionBatchProcessor, isKVConnected } = kvModule || {};
-
-    // Запускаем обработку через процессор batch операций
+    // Batch обновление с параллельной отправкой
     PerformanceTracker?.start('batch-update');
+    const results = [];
+    const BATCH_SIZE = 3;
 
-    let result;
-    if (NotionBatchProcessor) {
-      const processor = new NotionBatchProcessor(notionModule.notion, {
-        reviewerUserId,
-        useKV: isKVConnected?.() && operations.length > 20
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+
+      const batchPromises = batch.map((item, idx) => {
+        const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
+        const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
+
+        console.log(
+          `[FORM POST] Добавление ${i + idx + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`
+        );
+
+        return updateScore(item.pageId, field, item.value).then(() => ({
+          pageId: item.pageId,
+          field,
+          value: item.value,
+        }));
       });
-      result = await processor.processBatch(operations);
-    } else {
-      // Fallback на прямое обновление, если процессор недоступен
-      result = {
-        mode: 'direct',
-        results: await Promise.all(operations.map(op =>
-          updateScore(op.pageId, Object.keys(op.properties)[0], op.properties[Object.keys(op.properties)[0]].number).then(() => ({
-            operation: op,
-            status: 'success'
-          }))
-        )),
-        stats: { total: operations.length, successful: operations.length, failed: 0 }
-      };
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
     }
 
     const duration = PerformanceTracker?.end('batch-update') || 0;
 
-    console.log(`[FORM POST] Режим обработки: ${result.mode}, элементов: ${operations.length}, время: ${duration}ms`);
+    console.log(`[FORM POST] Обновлено ${results.length} элементов за ${duration}ms`);
 
-    return NextResponse.json({
+    const response = {
       ok: true,
+      queued: results.length,
       reviewerRole: role,
       duration,
-      mode: result.mode,
-      ...(result.mode === 'kv_queue'
-        ? {
-            queued: operations.length,
-            jobIds: result.jobIds,
-            message: `Операции добавлены в очередь KV. Создано ${result.totalJobs} задач`
-          }
-        : {
-            updated: result.stats.successful,
-            message: `Обновлено ${result.stats.successful} из ${result.stats.total} оценок`
-          })
-    });
+      message: `Обновлено ${results.length} оценок`
+    };
+
+    return NextResponse.json(response);
     
   } catch (error) {
     console.error('[FORM POST КРИТИЧЕСКАЯ ОШИБКА]', {
