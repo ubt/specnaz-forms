@@ -95,7 +95,8 @@ export async function GET() {
     // Тест 6: Локальные модули
     try {
       // Прямой импорт без алиаса
-      const tokenModule = await import("../../lib/token.js");
+      // путь рассчитан от app/api/debug/imports до корня репозитория
+      const tokenModule = await import("../../../../lib/token.js");
       results.tests.push({
         name: 'Local Token Module (Direct)',
         status: 'pass',
@@ -111,7 +112,8 @@ export async function GET() {
     
     try {
       // Прямой импорт без алиаса
-      const notionModule = await import("../../lib/notion.js");
+      // путь рассчитан от app/api/debug/imports до корня репозитория
+      const notionModule = await import("../../../../lib/notion.js");
       results.tests.push({
         name: 'Local Notion Module (Direct)',
         status: 'pass',
