@@ -191,14 +191,15 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           flexDirection: 'column',
           alignItems: 'flex-end',
           gap: 12,
-          minWidth: 360
+          width: 360
         }}>
           {/* Кнопки оценки */}
           <div style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, 1fr)',
             gap: 12,
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end'
+            justifyItems: 'center',
+            width: '100%'
           }}>
             {[0, 1, 2, 3, 4, 5].map((score) => (
               <ScoreButton
@@ -219,7 +220,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
             fontSize: 11,
             color: '#6c757d',
             textAlign: 'center',
-            maxWidth: 360
+            width: '100%'
           }}>
             {Object.values(scoreLabels).map((label, index) => (
               <div key={index} style={{
