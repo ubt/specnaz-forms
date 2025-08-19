@@ -272,10 +272,7 @@ export default function SkillsAssessmentForm({ params }) {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          items,
-          mode: 'final'
-        })
+        body: JSON.stringify({ items })
       });
 
       const raw = await response.text();
@@ -308,60 +305,6 @@ export default function SkillsAssessmentForm({ params }) {
     }
   }, [scoreData, token]);
 
-  const handleSaveDraft = useCallback(async () => {
-    if (scoreData.size === 0) {
-      setSubmitMessage('❌ Нет данных для сохранения');
-      return;
-    }
-
-    setSubmitting(true);
-    setSubmitMessage('');
-    
-    try {
-      const items = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => ({
-        pageId,
-        value: scoreInfo.value,
-        role: scoreInfo.role
-      }));
-
-      const response = await fetch(`/api/form/${token}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          items,
-          mode: 'draft'
-        })
-      });
-
-      const raw = await response.text();
-      let result = {};
-
-      try {
-        result = raw ? JSON.parse(raw) : {};
-      } catch {
-        throw new Error('сервер вернул некорректный ответ');
-      }
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Ошибка сохранения черновика');
-      }
-
-      if (result.ok) {
-        setSubmitMessage(`💾 Черновик сохранен (${result.queued} оценок)`);
-      }
-      
-    } catch (error) {
-      console.error('Ошибка сохранения черновика:', error);
-      const msg = error.message === 'Failed to fetch'
-        ? 'не удалось связаться с сервером'
-        : error.message;
-      setSubmitMessage(`❌ Ошибка сохранения: ${msg}`);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [scoreData, token]);
 
   return (
     <div style={{ 
@@ -574,25 +517,6 @@ export default function SkillsAssessmentForm({ params }) {
 
                 <div style={{ display: 'flex', gap: 12 }}>
                   <button
-                    type="button"
-                    onClick={handleSaveDraft}
-                    disabled={submitting || ratedSkills === 0}
-                    style={{
-                      padding: '12px 20px',
-                      backgroundColor: submitting ? '#6c757d' : '#6f42c1',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: 8,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: submitting || ratedSkills === 0 ? 'not-allowed' : 'pointer',
-                      transition: 'background-color 0.2s ease'
-                    }}
-                  >
-                    💾 Сохранить черновик
-                  </button>
-
-                  <button
                     type="submit"
                     disabled={submitting || ratedSkills === 0}
                     style={{
@@ -618,10 +542,8 @@ export default function SkillsAssessmentForm({ params }) {
                   marginTop: 16,
                   padding: 12,
                   borderRadius: 8,
-                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : 
-                                  submitMessage.includes('💾') ? '#d1ecf1' : '#d4edda',
-                  color: submitMessage.includes('❌') ? '#721c24' : 
-                         submitMessage.includes('💾') ? '#0c5460' : '#155724',
+                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : '#d4edda',
+                  color: submitMessage.includes('❌') ? '#721c24' : '#155724',
                   fontSize: 14,
                   textAlign: 'center'
                 }}>
