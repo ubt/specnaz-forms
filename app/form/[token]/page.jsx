@@ -729,11 +729,6 @@ export default function SkillsAssessmentForm({ params }) {
           maxRetries: 3
         };
       }
-
-        // Для больших пакетов принудительно используем Cloudflare KV
-        if (operations.length > 5) {
-          batchOptions.forceKV = true;
-        }
       
       // Отправляем через новый batch API
       const response = await fetch('/api/batch/submit', {
@@ -765,15 +760,15 @@ export default function SkillsAssessmentForm({ params }) {
         
       } else if (result.mode === 'direct_processing') {
         // Прямая обработка завершена немедленно
-        const successRate = result.stats.totalOperations > 0 ? 
+        const successRate = result.stats.totalOperations > 0 ?
           (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
-        
+
         setSubmitMessage(
           `✅ Прямая обработка завершена! ` +
           `Успешно: ${result.stats.successful}/${result.stats.totalOperations} (${successRate}%). ` +
           `Время: ${(result.stats.duration / 1000).toFixed(1)}с.`
         );
-        
+
         // Показываем детали если есть ошибки
         if (result.stats.failed > 0) {
           const errorDetails = result.results
@@ -781,13 +776,24 @@ export default function SkillsAssessmentForm({ params }) {
             .slice(0, 3)
             .map(r => r.error)
             .join('; ');
-          
+
           setTimeout(() => {
-            setSubmitMessage(prev => 
+            setSubmitMessage(prev =>
               prev + ` Ошибки: ${errorDetails}${result.stats.failed > 3 ? '...' : ''}`
             );
           }, 2000);
         }
+      } else if (result.mode === 'mixed') {
+        const dStats = result.direct.stats;
+        const successRate = dStats.totalOperations > 0 ?
+          (dStats.successful / dStats.totalOperations * 100).toFixed(1) : 0;
+
+        setSubmitMessage(
+          `⚡ Обработано напрямую: ${dStats.successful}/${dStats.totalOperations} (${successRate}%). ` +
+          `Оставшиеся ${result.kv.totalOperations} операций добавлены в очередь.`
+        );
+
+        trackKVBatchProgress(result.kv.jobIds, 'kv_queue');
       } else {
         // Неизвестный режим
         setSubmitMessage(`✅ Операции отправлены в режиме: ${result.mode}. Проверьте результаты.`);
