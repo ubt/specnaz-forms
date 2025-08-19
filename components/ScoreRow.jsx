@@ -129,7 +129,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
 
   return (
     <div style={{
-      padding: '20px 24px',
+      padding: '5px 24px',
       borderBottom: '1px solid #f1f3f4',
       backgroundColor: isDirty ? '#f8f9fa' : 'white',
       transition: 'background-color 0.2s ease'
