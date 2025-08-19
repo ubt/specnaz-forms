@@ -2,20 +2,28 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 
-// Безопасный импорт с обработкой ошибок
-async function safeImport(moduleName) {
+// Явные импорты модулей, чтобы сборщик включил их в бандл
+async function importTokenModule() {
   try {
-    console.log(`[SAFE IMPORT] Попытка импорта ${moduleName}`);
-    const module = await import(moduleName);
-    console.log(`[SAFE IMPORT] Успешно импортирован ${moduleName}`);
+    console.log('[IMPORT] Импорт token модуля...');
+    const module = await import("@/lib/token");
+    console.log('[IMPORT] Token модуль импортирован');
     return module;
   } catch (error) {
-    console.error(`[SAFE IMPORT] Ошибка импорта ${moduleName}:`, {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-    throw new Error(`Ошибка импорта модуля: ${moduleName} - ${error.message}`);
+    console.error('[IMPORT] Ошибка импорта token модуля:', error);
+    throw new Error(`Ошибка импорта модуля: '@/lib/token' - ${error.message}`);
+  }
+}
+
+async function importNotionModule() {
+  try {
+    console.log('[IMPORT] Импорт notion модуля...');
+    const module = await import("@/lib/notion");
+    console.log('[IMPORT] Notion модуль импортирован');
+    return module;
+  } catch (error) {
+    console.error('[IMPORT] Ошибка импорта notion модуля:', error);
+    throw new Error(`Ошибка импорта модуля: '@/lib/notion' - ${error.message}`);
   }
 }
 
@@ -65,22 +73,18 @@ export async function GET(req, { params }) {
     
     console.log(`[FORM GET] Обработка токена: ${token.substring(0, 10)}...`);
     
-    // Безопасный импорт модулей с детальным логированием
+    // Импорт модулей с обработкой ошибок
     let tokenModule, notionModule;
-    
+
     try {
       console.log('[FORM GET] Начинаем импорт модулей...');
-      
-      // Импорт token модуля
-      console.log('[FORM GET] Импорт token модуля...');
-      tokenModule = await safeImport("@/lib/token");
+
+      tokenModule = await importTokenModule();
       console.log('[FORM GET] Token модуль импортирован успешно, экспорты:', Object.keys(tokenModule));
-      
-      // Импорт notion модуля
-      console.log('[FORM GET] Импорт notion модуля...');
-      notionModule = await safeImport("@/lib/notion");
+
+      notionModule = await importNotionModule();
       console.log('[FORM GET] Notion модуль импортирован успешно, экспорты:', Object.keys(notionModule));
-      
+
       console.log('[FORM GET] Все модули импортированы успешно');
     } catch (importError) {
       console.error('[FORM GET] Ошибка импорта модулей:', {
@@ -395,12 +399,12 @@ export async function POST(req, { params }) {
     
     const { token } = params;
     
-    // Безопасный импорт модулей
+    // Импорт модулей
     let tokenModule, notionModule;
-    
+
     try {
-      tokenModule = await safeImport("@/lib/token");
-      notionModule = await safeImport("@/lib/notion");
+      tokenModule = await importTokenModule();
+      notionModule = await importNotionModule();
     } catch (importError) {
       console.error('[FORM POST] Ошибка импорта модулей:', importError.message);
       return NextResponse.json(
