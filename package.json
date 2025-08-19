@@ -1,13 +1,14 @@
 {
   "name": "notion-review-cloudflare",
-  "private": true,
   "scripts": {
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
     "pages:build": "npx @cloudflare/next-on-pages",
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
-    "cf:deploy": "npm run build && npx @cloudflare/next-on-pages && wrangler pages deploy .vercel/output/static"
+    "cf:deploy": "npm run build && npx @cloudflare/next-on-pages && wrangler pages deploy .vercel/output/static",
+    "kv:list": "wrangler kv:namespace list",
+    "kv:create": "wrangler kv:namespace create notion-queue-kv"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",
@@ -20,8 +21,5 @@
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.5",
     "wrangler": "^3.78.0"
-  },
-  "engines": {
-    "node": ">=18.17.0"
   }
 }
