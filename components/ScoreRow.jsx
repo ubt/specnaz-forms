@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
 
 // Оптимизированный debounce hook
-function useOptimizedDebounce(callback, delay = 100) {
+function useDebounce(callback, delay = 200) {
   const timeoutRef = useRef();
   const callbackRef = useRef(callback);
   
@@ -20,17 +20,91 @@ function useOptimizedDebounce(callback, delay = 100) {
   }, [delay]);
 }
 
-// Оптимизированный компонент строки оценки с широким описанием
-const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
+// Компонент кнопки оценки
+const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
+  const isSelected = currentValue === value;
+  
+  const getButtonStyle = () => {
+    const baseStyle = {
+      width: 44,
+      height: 44,
+      borderRadius: 8,
+      border: '2px solid',
+      backgroundColor: 'white',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      fontSize: 16,
+      fontWeight: 600,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative'
+    };
+
+    if (isSelected) {
+      const colors = {
+        0: { bg: '#f8d7da', border: '#dc3545', color: '#721c24' },
+        1: { bg: '#fff3cd', border: '#ffc107', color: '#856404' },
+        2: { bg: '#cce7ff', border: '#007bff', color: '#004085' },
+        3: { bg: '#d4edda', border: '#28a745', color: '#155724' },
+        4: { bg: '#e2e3ff', border: '#6f42c1', color: '#4a154b' },
+        5: { bg: '#f8e8ff', border: '#e83e8c', color: '#83104e' }
+      };
+      const colorScheme = colors[value] || colors[0];
+      return {
+        ...baseStyle,
+        backgroundColor: colorScheme.bg,
+        borderColor: colorScheme.border,
+        color: colorScheme.color,
+        boxShadow: `0 0 0 3px ${colorScheme.border}20`
+      };
+    } else {
+      return {
+        ...baseStyle,
+        borderColor: '#dee2e6',
+        color: '#6c757d'
+      };
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      style={getButtonStyle()}
+      onClick={() => onSelect(value)}
+      title={label}
+      onMouseEnter={(e) => {
+        if (!isSelected) {
+          e.target.style.borderColor = '#adb5bd';
+          e.target.style.backgroundColor = '#f8f9fa';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) {
+          e.target.style.borderColor = '#dee2e6';
+          e.target.style.backgroundColor = 'white';
+        }
+      }}
+    >
+      {value}
+    </button>
+  );
+});
+
+ScoreButton.displayName = 'ScoreButton';
+
+// Основной компонент строки оценки с улучшенным дизайном
+const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
   const [isDirty, setIsDirty] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   
-  const debouncedChange = useOptimizedDebounce(
+  const debouncedChange = useDebounce(
     useCallback((newValue) => {
       onChange({ value: newValue });
       setIsDirty(false);
     }, [onChange]),
-    100
+    150
   );
   
   const handleValueChange = useCallback((newVal) => {
@@ -40,195 +114,244 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
     debouncedChange(clampedVal);
   }, [debouncedChange]);
   
-  // Инициализация значения только один раз
+  // Уведомляем родителя о начальных значениях
   useEffect(() => {
-    if (item.current !== undefined && item.current !== null) {
-      const initialValue = clamp(item.current);
-      setVal(initialValue);
-      debouncedChange(initialValue);
-    }
-  }, []); // Пустой массив зависимостей
-
-  // Стили для компонента
-  const containerStyle = {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto auto",
-    alignItems: "center", // было "start" — из-за этого элементы шли «вразнобой»
-    padding: "20px 24px",
-    borderBottom: "1px solid #e5e7eb",
-    backgroundColor: isDirty ? "#f8fafc" : "transparent",
-    transition: "background-color 0.2s ease",
-    gap: "20px",
-    minHeight: "100px"
-  };
-
-  const titleStyle = {
-    fontWeight: 700,
-    lineHeight: 1.4,
-    fontSize: "16px",
-    marginBottom: "12px",
-    color: "#1f2937",
-    wordBreak: "break-word"
-  };
-
-  // ШИРОКОЕ описание без кнопки "показать больше"
-  const descriptionStyle = {
-    color: "#4b5563",
-    fontSize: "14px",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap",
-    wordWrap: "break-word",
-    maxWidth: "none",
-    width: "100%",
-    marginTop: "8px",
-    padding: "12px",
-    backgroundColor: "#f9fafb",
-    borderRadius: "8px",
-    border: "1px solid #e5e7eb"
-  };
-
-  const sliderStyle = {
-    width: "160px",
-    height: "8px",
-    background: `linear-gradient(to right, 
-      #ef4444 0%, #f97316 20%, #eab308 40%, #22c55e 60%, #3b82f6 80%, #8b5cf6 100%)`,
-    borderRadius: "4px",
-    outline: "none",
-    cursor: "pointer",
-    alignSelf: "center",
-    appearance: "none",
-    WebkitAppearance: "none"
-  };
-
-  const numberInputStyle = {
-    width: "70px",
-    padding: "10px 12px",
-    border: "2px solid #e5e7eb",
-    borderRadius: "8px",
-    fontSize: "16px",
-    textAlign: "center",
-    fontWeight: "700",
-    color: "#374151",
-    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-    alignSelf: "center" // поле остаётся по центру — теперь слайдер тоже
-  };
-
-  // Цветовая индикация уровня
-  const getLevelColor = (value) => {
-    const colors = [
-      "#9ca3af", // 0 - серый
-      "#ef4444", // 1 - красный  
-      "#f97316", // 2 - оранжевый
-      "#eab308", // 3 - желтый
-      "#22c55e", // 4 - зеленый
-      "#8b5cf6"  // 5 - фиолетовый
-    ];
-    return colors[value] || colors[0];
-  };
-
-  const getLevelText = (value) => {
-    const levels = [
-      "Нет опыта",
-      "Начальный",
-      "Базовый", 
-      "Средний",
-      "Продвинутый",
-      "Экспертный"
-    ];
-    return levels[value] || levels[0];
+    debouncedChange(val);
+  }, []);
+  
+  // Проверяем, нужна ли кнопка "показать больше"
+  const needsExpansion = item.description && item.description.length > 200;
+  
+  const scoreLabels = {
+    0: "Нет опыта",
+    1: "Начальный",
+    2: "Базовый", 
+    3: "Средний",
+    4: "Продвинутый",
+    5: "Экспертный"
   };
 
   return (
-    <div style={containerStyle}>
-      {/* Информация о навыке с ШИРОКИМ описанием */}
-      <div style={{ minWidth: 0, width: "100%", alignSelf: "start" }}>
-        <div style={titleStyle}>
-          {item.name}
+    <div style={{
+      padding: '20px 24px',
+      borderBottom: '1px solid #f1f3f4',
+      backgroundColor: isDirty ? '#f8f9fa' : 'white',
+      transition: 'background-color 0.2s ease'
+    }}>
+      {/* Основная информация о навыке */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 24,
+        alignItems: 'start'
+      }}>
+        {/* Левая часть - информация о навыке */}
+        <div style={{ minWidth: 0 }}>
+          <h4 style={{ 
+            fontSize: 16,
+            fontWeight: 600, 
+            lineHeight: 1.3,
+            marginBottom: 8,
+            color: '#2c3e50'
+          }}>
+            {item.name}
+          </h4>
+          
+          {item.description && (
+            <div style={{ marginBottom: 12 }}>
+              <div 
+                style={{
+                  color: '#495057', 
+                  fontSize: 14, 
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
+                  overflow: 'hidden',
+                  ...(needsExpansion && !isExpanded && {
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                  })
+                }}
+              >
+                {item.description}
+              </div>
+              {needsExpansion && (
+                <button
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#007bff",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    marginTop: 6,
+                    padding: "4px 0",
+                    textDecoration: "none",
+                    fontWeight: 500
+                  }}
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  type="button"
+                  onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
+                  onMouseLeave={(e) => e.target.style.textDecoration = "none"}
+                >
+                  {isExpanded ? "↑ Свернуть" : "↓ Показать полностью"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Текущее значение */}
+          {val !== null && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 12px',
+              backgroundColor: '#e7f3ff',
+              borderRadius: 16,
+              fontSize: 13,
+              fontWeight: 500,
+              color: '#0066cc'
+            }}>
+              <span>Текущая оценка:</span>
+              <span style={{ fontWeight: 600 }}>{val} - {scoreLabels[val]}</span>
+            </div>
+          )}
         </div>
-        
-        {/* Текущий уровень с цветовой индикацией */}
+
+        {/* Правая часть - элементы управления оценкой */}
         <div style={{
-          display: "inline-flex",
-          alignItems: "center",
-          backgroundColor: getLevelColor(val),
-          color: "white",
-          padding: "6px 14px",
-          borderRadius: "16px",
-          fontSize: "13px",
-          fontWeight: "700",
-          marginBottom: item.description ? "12px" : "0",
-          boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 12,
+          minWidth: 320
         }}>
-          <span style={{ marginRight: "8px", fontSize: "16px" }}>{val}</span>
-          <span>{getLevelText(val)}</span>
-        </div>
-        
-        {/* ШИРОКОЕ описание навыка БЕЗ кнопки "показать больше" */}
-        {item.description && (
-          <div style={descriptionStyle}>
-            {item.description}
+          {/* Кнопки оценки */}
+          <div style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end'
+          }}>
+            {[0, 1, 2, 3, 4, 5].map((score) => (
+              <ScoreButton
+                key={score}
+                value={score}
+                currentValue={val}
+                onSelect={handleValueChange}
+                label={`${score} - ${scoreLabels[score]}`}
+              />
+            ))}
           </div>
-        )}
-      </div>
-      
-      {/* Слайдер с улучшенным стилем */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "8px",
-          alignSelf: "center" // добавлено: центрируем всю колонку слайдера
-        }}
-      >
-        <input
-          type="range"
-          min={0}
-          max={5}
-          step={1}
-          value={val}
-          style={sliderStyle}
-          onChange={(e) => handleValueChange(Number(e.target.value))}
-          aria-label={`Оценка для ${item.name}`}
-        />
-        <div style={{ 
-          fontSize: "12px", 
-          color: "#6b7280", 
-          fontWeight: "600",
-          textAlign: "center"
-        }}>
-          0 — 5
+
+          {/* Подписи для уровней */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(6, 1fr)',
+            gap: 8,
+            fontSize: 11,
+            color: '#6c757d',
+            textAlign: 'center',
+            maxWidth: 320
+          }}>
+            {Object.values(scoreLabels).map((label, index) => (
+              <div key={index} style={{ 
+                fontWeight: val === index ? 600 : 400,
+                color: val === index ? '#495057' : '#6c757d'
+              }}>
+                {label}
+              </div>
+            ))}
+          </div>
+
+          {/* Слайдер как дополнительный элемент управления */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            width: '100%',
+            maxWidth: 320
+          }}>
+            <span style={{ fontSize: 12, color: '#6c757d', minWidth: 20 }}>0</span>
+            <input
+              type="range"
+              min={0}
+              max={5}
+              step={1}
+              value={val}
+              style={{
+                flex: 1,
+                height: 6,
+                background: `linear-gradient(to right, #007bff 0%, #007bff ${(val/5)*100}%, #e9ecef ${(val/5)*100}%, #e9ecef 100%)`,
+                borderRadius: 3,
+                outline: 'none',
+                cursor: 'pointer',
+                appearance: 'none',
+                WebkitAppearance: 'none'
+              }}
+              onChange={(e) => handleValueChange(Number(e.target.value))}
+              aria-label={`Оценка для ${item.name}`}
+            />
+            <span style={{ fontSize: 12, color: '#6c757d', minWidth: 20 }}>5</span>
+          </div>
         </div>
       </div>
-      
-      {/* Числовое поле с улучшенным стилем */}
-      <input
-        type="number"
-        min={0}
-        max={5}
-        value={val}
-        style={{
-          ...numberInputStyle,
-          borderColor: isDirty ? "#3b82f6" : "#e5e7eb",
-          boxShadow: isDirty ? "0 0 0 3px rgba(59, 130, 246, 0.1)" : "none"
-        }}
-        onChange={(e) => handleValueChange(Number(e.target.value))}
-        onFocus={(e) => {
-          e.target.style.borderColor = "#3b82f6";
-          e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.1)";
-        }}
-        onBlur={(e) => {
-          if (!isDirty) {
-            e.target.style.borderColor = "#e5e7eb";
-            e.target.style.boxShadow = "none";
-          }
-        }}
-        aria-label={`Числовая оценка для ${item.name}`}
-      />
+
+      {/* Индикатор изменений */}
+      {isDirty && (
+        <div style={{
+          marginTop: 12,
+          padding: '6px 12px',
+          backgroundColor: '#fff3cd',
+          border: '1px solid #ffeaa7',
+          borderRadius: 6,
+          fontSize: 12,
+          color: '#856404',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span>⏳</span>
+          <span>Сохранение изменений...</span>
+        </div>
+      )}
+
+      {/* CSS для стилизации слайдера */}
+      <style jsx>{`
+        input[type="range"]::-webkit-slider-thumb {
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #007bff;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 2px 6px rgba(0,123,255,0.3);
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #007bff;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 2px 6px rgba(0,123,255,0.3);
+        }
+        
+        input[type="range"]::-webkit-slider-track {
+          background: transparent;
+        }
+        
+        input[type="range"]::-moz-range-track {
+          background: transparent;
+        }
+      `}</style>
     </div>
   );
 });
 
-FixedScoreRow.displayName = 'FixedScoreRow';
+ScoreRow.displayName = 'ScoreRow';
 
-export default FixedScoreRow;
+export default ScoreRow;
