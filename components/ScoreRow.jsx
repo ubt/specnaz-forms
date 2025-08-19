@@ -70,6 +70,7 @@ const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
   return (
     <button
       type="button"
+      className="score-button"
       style={getButtonStyle()}
       onClick={() => onSelect(value)}
       title={label}
