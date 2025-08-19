@@ -9,7 +9,7 @@ import { notion } from "@/lib/notion";
 // Лимиты безопасности для разных режимов обработки
 const LIMITS = {
   DIRECT_PROCESSING: {
-    maxOperations: 50,      // Максимум операций для прямой обработки
+    maxOperations: 5,      // Максимум операций для прямой обработки
     maxOperationSize: 8000   // Максимальный размер одной операции (символы)
   },
   KV_QUEUE: {
