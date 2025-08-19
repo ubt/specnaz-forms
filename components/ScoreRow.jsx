@@ -52,7 +52,7 @@ const FixedScoreRow = memo(({ item, onChange, hideComment = true }) => {
   // Стили для компонента
   const containerStyle = {
     display: "grid",
-    gridTemplateColumns: "1fr auto auto",
+    gridTemplateColumns: "minmax(0, 1fr) auto auto",
     alignItems: "center", // было "start" — из-за этого элементы шли «вразнобой»
     padding: "20px 24px",
     borderBottom: "1px solid #e5e7eb",
