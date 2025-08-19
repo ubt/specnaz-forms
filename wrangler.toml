@@ -10,9 +10,9 @@ cpu_ms = 60000
 
 # Привязка KV Namespace
 [[kv_namespaces]]
-binding = "KV_BINDING"  						# Имя переменной в коде
-preview_id = "21177d901f444877a24c9eef4a404016"  					# Ваш Namespace ID
-id = "21177d901f444877a24c9eef4a404016"          	# Ваш Namespace ID
+binding = "KV-NOTION"  						# Имя переменной в коде
+preview_id = "3f1037b3b7b1455daa8d60423d528092"  					# Ваш Namespace ID
+id = "3f1037b3b7b1455daa8d60423d528092"          	# Ваш Namespace ID
 
 # Переменные окружения (при необходимости)
 [vars]
