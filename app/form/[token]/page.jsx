@@ -712,7 +712,7 @@ export default function SkillsAssessmentForm({ params }) {
         maxRetries: 3
       };
       
-      if (operations.length > 100) {
+      if (operations.length > 15) {
         // Для больших batch операций используем более консервативные настройки
         batchOptions = {
           batchSize: 75,
@@ -720,7 +720,7 @@ export default function SkillsAssessmentForm({ params }) {
           rateLimitDelay: 2500,
           maxRetries: 4
         };
-      } else if (operations.length < 25) {
+      } else if (operations.length < 5) {
         // Для маленьких batch операций используем более агрессивные настройки
         batchOptions = {
           batchSize: 25,
@@ -731,7 +731,7 @@ export default function SkillsAssessmentForm({ params }) {
       }
 
         // Для больших пакетов принудительно используем Cloudflare KV
-        if (operations.length > 50) {
+        if (operations.length > 5) {
           batchOptions.forceKV = true;
         }
       
