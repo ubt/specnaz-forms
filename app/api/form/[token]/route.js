@@ -505,8 +505,8 @@ export async function POST(req, { params }) {
       const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
       const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
 
-      console.log(`[FORM POST] Добавление в очередь ${index + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`);
-      queueScoreUpdate(item.pageId, field, item.value);
+      console.log(`[FORM POST] Добавление ${index + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`);
+      await queueScoreUpdate(item.pageId, field, item.value);
 
       results.push({
         pageId: item.pageId,
@@ -517,7 +517,7 @@ export async function POST(req, { params }) {
 
     const duration = PerformanceTracker?.end('batch-update') || 0;
 
-    console.log(`[FORM POST] В очередь добавлено ${results.length} элементов за ${duration}ms`);
+    console.log(`[FORM POST] Обновлено ${results.length} элементов за ${duration}ms`);
 
     const response = {
       ok: true,
@@ -525,7 +525,7 @@ export async function POST(req, { params }) {
       mode,
       reviewerRole: role,
       duration,
-      message: `Добавлено в очередь ${results.length} оценок`
+      message: `Обновлено ${results.length} оценок`
     };
 
     return NextResponse.json(response);
