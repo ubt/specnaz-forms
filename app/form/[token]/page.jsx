@@ -378,47 +378,6 @@ export default function SkillsAssessmentForm({ params }) {
               Оцените уровень владения навыками по шкале от 0 до 5
             </p>
             
-            {stats && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                gap: 16,
-                marginTop: 24
-              }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: '#007bff' }}>
-                    {skillGroups.length}
-                  </div>
-                  <div style={{ fontSize: 14, color: '#6c757d' }}>
-                    Сотрудников
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: '#28a745' }}>
-                    {totalSkills}
-                  </div>
-                  <div style={{ fontSize: 14, color: '#6c757d' }}>
-                    Навыков
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: '#ffc107' }}>
-                    {ratedSkills}
-                  </div>
-                  <div style={{ fontSize: 14, color: '#6c757d' }}>
-                    Оценено
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: '#17a2b8' }}>
-                    {stats.reviewerRole || 'peer'}
-                  </div>
-                  <div style={{ fontSize: 14, color: '#6c757d' }}>
-                    Роль
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Прогресс-бар */}

@@ -98,7 +98,6 @@ ScoreButton.displayName = 'ScoreButton';
 const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
   const [val, setVal] = useState(() => clamp(item.current ?? 0));
   const [isDirty, setIsDirty] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   
   const debouncedChange = useDebounce(
     useCallback((newValue) => {
@@ -120,8 +119,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
     debouncedChange(val);
   }, []);
   
-  // Проверяем, нужна ли кнопка "показать больше"
-  const needsExpansion = item.description && item.description.length > 200;
   
   const scoreLabels = {
     0: "Нет опыта",
@@ -160,44 +157,17 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           
           {item.description && (
             <div style={{ marginBottom: 12 }}>
-              <div 
+              <div
                 style={{
-                  color: '#495057', 
-                  fontSize: 14, 
+                  color: '#495057',
+                  fontSize: 14,
                   lineHeight: 1.5,
                   whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word',
-                  overflow: 'hidden',
-                  ...(needsExpansion && !isExpanded && {
-                    display: "-webkit-box",
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: "vertical",
-                  })
+                  wordWrap: 'break-word'
                 }}
               >
                 {item.description}
               </div>
-              {needsExpansion && (
-                <button
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#007bff",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    marginTop: 6,
-                    padding: "4px 0",
-                    textDecoration: "none",
-                    fontWeight: 500
-                  }}
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  type="button"
-                  onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
-                  onMouseLeave={(e) => e.target.style.textDecoration = "none"}
-                >
-                  {isExpanded ? "↑ Свернуть" : "↓ Показать полностью"}
-                </button>
-              )}
             </div>
           )}
 
@@ -266,37 +236,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
             ))}
           </div>
 
-          {/* Слайдер как дополнительный элемент управления */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            width: '100%',
-            maxWidth: 320
-          }}>
-            <span style={{ fontSize: 12, color: '#6c757d', minWidth: 20 }}>0</span>
-            <input
-              type="range"
-              min={0}
-              max={5}
-              step={1}
-              value={val}
-              style={{
-                flex: 1,
-                height: 6,
-                background: `linear-gradient(to right, #007bff 0%, #007bff ${(val/5)*100}%, #e9ecef ${(val/5)*100}%, #e9ecef 100%)`,
-                borderRadius: 3,
-                outline: 'none',
-                cursor: 'pointer',
-                appearance: 'none',
-                WebkitAppearance: 'none',
-                MozAppearance: 'none'
-              }}
-              onChange={(e) => handleValueChange(Number(e.target.value))}
-              aria-label={`Оценка для ${item.name}`}
-            />
-            <span style={{ fontSize: 12, color: '#6c757d', minWidth: 20 }}>5</span>
-          </div>
         </div>
       </div>
 
