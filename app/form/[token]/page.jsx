@@ -495,8 +495,8 @@ export default function SkillsAssessmentForm({ params }) {
                         }}>
                           {group.role === 'self' ? 'Самооценка' :
                            group.role === 'manager' ? 'Оценка менеджера' :
-                           group.role === 'p1_peer' ? 'Peer оценка 1' :
-                           group.role === 'p2_peer' ? 'Peer оценка 2' :
+                           group.role === 'p1_peer' ? 'Peer-оценка' :
+                           group.role === 'p2_peer' ? 'Peer-оценка' :
                            'Peer оценка'}
                         </span>
                         <span style={{ color: '#6c757d', fontSize: 14 }}>
