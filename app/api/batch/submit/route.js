@@ -100,8 +100,11 @@ export async function POST(req) {
     // Принудительное использование KV, если запрошено
     const forceKV = options.forceKV === true || body.forceKV === true;
 
-    // Выбираем режим обработки на основе размера и доступности KV
-    if (kvAvailable && (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations || forceKV)) {
+    if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations && kvAvailable) {
+      // Будем использовать смешанный режим: часть операций напрямую, остальные через KV
+      processingMode = 'mixed';
+      limits = LIMITS.KV_QUEUE;
+    } else if (kvAvailable && forceKV) {
       processingMode = 'kv_queue';
       limits = LIMITS.KV_QUEUE;
     }
@@ -109,9 +112,9 @@ export async function POST(req) {
     console.log(`[BATCH SUBMIT] Режим обработки: ${processingMode}, KV доступен: ${kvAvailable}`);
 
     // Проверяем лимиты для выбранного режима
-    if (operations.length > limits.maxOperations) {
+    if (processingMode === 'direct' && operations.length > limits.maxOperations) {
       return NextResponse.json(
-        { 
+        {
           error: `Слишком много операций для режима ${processingMode}`,
           details: {
             provided: operations.length,
@@ -186,7 +189,7 @@ export async function POST(req) {
       concurrency: Math.min(options.concurrency || 3, LIMITS.GENERAL.maxConcurrency),
       rateLimitDelay: Math.max(options.rateLimitDelay || 2000, LIMITS.GENERAL.minRateLimit),
       maxRetries: Math.min(options.maxRetries || 3, LIMITS.GENERAL.maxRetries),
-      useKV: processingMode === 'kv_queue',
+      useKV: false,
       reviewerUserId: payload.reviewerUserId,
       teamName: payload.teamName || 'unknown'
     };
@@ -195,9 +198,29 @@ export async function POST(req) {
 
     // 7. Выполнение обработки в зависимости от режима
     if (processingMode === 'kv_queue') {
-      return await handleKVQueueProcessing(operations, processorOptions);
+      return await handleKVQueueProcessing(operations, { ...processorOptions, useKV: true });
+    } else if (processingMode === 'mixed') {
+      const directOps = operations.slice(0, LIMITS.DIRECT_PROCESSING.maxOperations);
+      const kvOps = operations.slice(LIMITS.DIRECT_PROCESSING.maxOperations);
+
+      const directResponse = await handleDirectProcessing(directOps, { ...processorOptions, useKV: false });
+      const directData = await directResponse.json();
+
+      if (kvOps.length === 0) {
+        return NextResponse.json(directData);
+      }
+
+      const kvResponse = await handleKVQueueProcessing(kvOps, { ...processorOptions, useKV: true });
+      const kvData = await kvResponse.json();
+
+      return NextResponse.json({
+        success: true,
+        mode: 'mixed',
+        direct: directData,
+        kv: kvData
+      });
     } else {
-      return await handleDirectProcessing(operations, processorOptions);
+      return await handleDirectProcessing(operations, { ...processorOptions, useKV: false });
     }
 
   } catch (error) {
