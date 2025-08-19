@@ -37,7 +37,7 @@ export default function OptimizedAdmin() {
       errors.teamName = "Название команды обязательно";
     } else if (teamName.trim().length < 2) {
       errors.teamName = "Слишком короткое название";
-    } else if (teamName.trim().length > 50) {
+    } else if (teamName.trim().length > 15) {
       errors.teamName = "Слишком длинное название";
     }
     
@@ -433,7 +433,7 @@ export default function OptimizedAdmin() {
                       padding: "12px 8px",
                       fontSize: 13,
                       fontFamily: "Monaco, 'Courier New', monospace",
-                      maxWidth: 400,
+                      maxWidth: 500,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap"
