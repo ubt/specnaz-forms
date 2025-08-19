@@ -101,15 +101,31 @@ export async function POST(req, context) {
     // Принудительное использование KV, если запрошено
     const forceKV = options.forceKV === true || body.forceKV === true;
 
-     if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations) {
-      // Для количества операций больше 5 используем смешанный режим
-      processingMode = 'mixed';
-      limits = LIMITS.KV_QUEUE;
-        }
     if (forceKV) {
-      // При явном указании используем только KV
+      if (!kvAvailable) {
+        return NextResponse.json(
+          {
+            error: 'Cloudflare KV недоступно',
+            suggestion: 'Убедитесь, что KV namespace привязан или уберите параметр forceKV'
+          },
+          { status: 503 }
+        );
+      }
       processingMode = 'kv_queue';
       limits = LIMITS.KV_QUEUE;
+    } else if (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations) {
+      if (kvAvailable) {
+        processingMode = 'kv_queue';
+        limits = LIMITS.KV_QUEUE;
+      } else {
+        return NextResponse.json(
+          {
+            error: `Для обработки более ${LIMITS.DIRECT_PROCESSING.maxOperations} операций требуется Cloudflare KV`,
+            suggestion: 'Уменьшите количество операций или настройте Cloudflare KV'
+          },
+          { status: 503 }
+        );
+      }
     }
 
     console.log(`[BATCH SUBMIT] Режим обработки: ${processingMode}, KV доступен: ${kvAvailable}`);
