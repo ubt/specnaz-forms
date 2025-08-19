@@ -269,16 +269,23 @@ export default function SkillsAssessmentForm({ params }) {
       
       const response = await fetch(`/api/form/${token}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           items,
           mode: 'final'
         })
       });
 
-      const result = await response.json();
+      const raw = await response.text();
+      let result = {};
+
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error('сервер вернул некорректный ответ');
+      }
 
       if (!response.ok) {
         throw new Error(result.error || 'Ошибка отправки данных');
@@ -319,16 +326,23 @@ export default function SkillsAssessmentForm({ params }) {
 
       const response = await fetch(`/api/form/${token}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           items,
           mode: 'draft'
         })
       });
 
-      const result = await response.json();
+      const raw = await response.text();
+      let result = {};
+
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error('сервер вернул некорректный ответ');
+      }
 
       if (!response.ok) {
         throw new Error(result.error || 'Ошибка сохранения черновика');
