@@ -2,13 +2,14 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { getKVBatchStatus, isKVConnected } from "@/lib/kv-queue";
+import { getKVBatchStatus, isKVConnected, initKV } from "@/lib/kv-queue";
 
 // Кэш для часто запрашиваемых статусов (в памяти Edge Runtime)
 const statusCache = new Map();
 const CACHE_TTL = 3000; // Кэшируем статусы на 3 секунды (быстрее чем Redis версия)
 
-export async function GET(req) {
+export async function GET(req, context) {
+  initKV(context.env);
   console.log('[BATCH STATUS] Получен GET запрос на проверку статуса');
   
   try {
