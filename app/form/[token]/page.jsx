@@ -354,7 +354,7 @@ export default function SkillsAssessmentForm({ params }) {
                 fontSize: 16,
                 fontWeight: 600
               }}>
-                Ревьювер: {stats.reviewerName}
+                Оценивающий: {stats.reviewerName}
               </div>
             )}
 
