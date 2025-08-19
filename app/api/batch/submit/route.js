@@ -9,7 +9,7 @@ import { notion } from "@/lib/notion";
 // Лимиты безопасности для разных режимов обработки
 const LIMITS = {
   DIRECT_PROCESSING: {
-    maxOperations: 100,      // Максимум операций для прямой обработки
+    maxOperations: 50,      // Максимум операций для прямой обработки
     maxOperationSize: 8000   // Максимальный размер одной операции (символы)
   },
   KV_QUEUE: {
@@ -97,8 +97,11 @@ export async function POST(req) {
     let processingMode = 'direct';
     let limits = LIMITS.DIRECT_PROCESSING;
 
+    // Принудительное использование KV, если запрошено
+    const forceKV = options.forceKV === true || body.forceKV === true;
+
     // Выбираем режим обработки на основе размера и доступности KV
-    if (kvAvailable && operations.length > LIMITS.DIRECT_PROCESSING.maxOperations) {
+    if (kvAvailable && (operations.length > LIMITS.DIRECT_PROCESSING.maxOperations || forceKV)) {
       processingMode = 'kv_queue';
       limits = LIMITS.KV_QUEUE;
     }
