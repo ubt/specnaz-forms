@@ -1,6 +1,5 @@
 # wrangler.toml - Конфигурация для Cloudflare Pages
 name = "specnaz-forms"
-node_compat = true
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
