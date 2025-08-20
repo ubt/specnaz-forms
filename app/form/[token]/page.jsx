@@ -429,20 +429,6 @@ export default function SkillsAssessmentForm({ params }) {
                 Оценивающий: {stats.reviewerName}
               </div>
             )}
-            
-            {/* Индикатор KV поддержки */}
-            <div style={{
-              marginTop: 12,
-              fontSize: 13,
-              color: '#6c757d',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8
-            }}>
-              <span>🚀</span>
-              <span>Поддержка Cloudflare KV для больших объемов</span>
-            </div>
           </div>
 
           {/* Прогресс-бар */}
@@ -480,24 +466,7 @@ export default function SkillsAssessmentForm({ params }) {
                 borderRadius: 4,
                 transition: 'all 0.3s ease'
               }}></div>
-            </div>
-            
-            {/* Подсказка по размеру batch */}
-            {ratedSkills > 0 && (
-              <div style={{
-                marginTop: 8,
-                fontSize: 12,
-                color: '#6c757d',
-                textAlign: 'center'
-              }}>
-                {ratedSkills > 100 ? 
-                  '🔄 Большой объем - будет использовано KV для оптимальной обработки' :
-                  ratedSkills > 25 ?
-                  '⚡ Средний объем - автоматический выбор режима обработки' :
-                  '🚀 Небольшой объем - будет использована прямая обработка'
-                }
-              </div>
-            )}
+            </div>        
           </div>
 
           {/* Форма оценки */}
@@ -688,7 +657,7 @@ export default function SkillsAssessmentForm({ params }) {
           fontSize: 12,
           paddingBottom: 24
         }}>
-          Страница загрузилась за {loadTime.toFixed(2)} сек. | Поддержка Cloudflare KV
+          Страница загрузилась за {loadTime.toFixed(2)} сек.
         </div>
       )}
 
