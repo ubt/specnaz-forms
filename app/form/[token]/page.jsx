@@ -324,18 +324,14 @@ export default function SkillsAssessmentForm({ params }) {
       
       if (result.mode === 'kv_queue') {
         // KV очереди используются
-        setSubmitMessage(`🔄 Операции добавлены в Cloudflare KV очередь. Создано ${result.totalJobs} задач для обработки ${result.totalOperations} операций.`);
+        setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
 
       } else if (result.mode === 'direct_processing' || result.mode === 'direct') {
         // Прямая обработка завершена
         const successRate = result.stats.totalOperations > 0 ?
           (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
 
-        setSubmitMessage(
-          `✅ Прямая обработка завершена! ` +
-          `Успешно: ${result.stats.successful}/${result.stats.totalOperations} (${successRate}%). ` +
-          `Время: ${(result.stats.duration / 1000).toFixed(1)}с.`
-        );
+			setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
 
         // Показываем детали если есть ошибки
         if (result.stats.failed > 0) {
