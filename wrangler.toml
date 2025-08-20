@@ -12,3 +12,6 @@ cpu_ms = 60000
 [vars]
 ENVIRONMENT = "production"
 
+[[kv_namespaces]]
+binding = "NOTION_QUEUE_KV"
+id = "9d4ff43755a34cdb8559b86a95b2cfa1"
