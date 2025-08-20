@@ -1,37 +1,62 @@
-// app/api/kv/diagnostics/route.js - Диагностический endpoint для Cloudflare KV
+// app/api/kv/diagnostics/route.js - ОБНОВЛЕННАЯ диагностика для выявления проблем
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { initKV, isKVConnected } from "@/lib/kv-queue";
+import { initKV, isKVConnected, getKVDiagnostics } from "@/lib/kv-queue";
 
 export async function GET(req, context) {
-  console.log('[KV DIAGNOSTICS] 🔍 Начинаем диагностику Cloudflare KV для Pages');
+  console.log('[KV DIAGNOSTICS] 🔍 УГЛУБЛЕННАЯ диагностика Cloudflare KV для Pages');
   
   const diagnostics = {
     timestamp: new Date().toISOString(),
     runtime: "edge",
-    platform: "Cloudflare Pages"
+    platform: "Cloudflare Pages",
+    url: req.url
   };
 
-  // 1. Проверка context и bindings
+  // 1. ДЕТАЛЬНАЯ проверка context
   diagnostics.context = {
     provided: !!context,
-    hasEnv: !!context?.env,
-    envKeys: context?.env ? Object.keys(context.env) : [],
-    hasBindings: !!context?.bindings,
-    bindingsKeys: context?.bindings ? Object.keys(context.bindings) : [],
-    contextKeys: context ? Object.keys(context) : [],
+    type: typeof context,
+    isNull: context === null,
+    isUndefined: context === undefined,
     
-    // Проверка доступа к KV через context
+    // Проверяем все возможные свойства context
+    hasEnv: !!context?.env,
+    hasBindings: !!context?.bindings,
+    hasCloudflare: !!context?.cloudflare,
+    hasWaitUntil: !!context?.waitUntil,
+    hasParams: !!context?.params,
+    
+    // Ключи объектов
+    contextKeys: context ? Object.keys(context) : [],
+    envKeys: context?.env ? Object.keys(context.env) : [],
+    bindingsKeys: context?.bindings ? Object.keys(context.bindings) : [],
+    
+    // СПЕЦИФИЧНАЯ проверка KV в context
     contextEnvKV: !!context?.env?.NOTION_QUEUE_KV,
+    contextEnvKVType: context?.env?.NOTION_QUEUE_KV ? typeof context.env.NOTION_QUEUE_KV : 'undefined',
     contextBindingsKV: !!context?.bindings?.NOTION_QUEUE_KV,
-    contextDirectKV: !!context?.NOTION_QUEUE_KV
+    contextDirectKV: !!context?.NOTION_QUEUE_KV,
+    
+    // Проверяем альтернативные названия KV в env
+    envKVVariations: context?.env ? Object.keys(context.env).filter(key => 
+      key.includes('KV') || key.includes('NOTION') || key.includes('QUEUE')
+    ) : [],
+    
+    // Сериализация context для анализа (обрезанная)
+    contextSample: context ? {
+      keys: Object.keys(context),
+      envSample: context.env ? Object.keys(context.env).slice(0, 10) : null,
+      hasEnvNotionKV: !!context.env?.NOTION_QUEUE_KV
+    } : null
   };
 
   // 2. Проверка глобальных переменных
   diagnostics.globalVariables = {
     NOTION_QUEUE_KV_exists: typeof NOTION_QUEUE_KV !== 'undefined',
     NOTION_QUEUE_KV_truthy: typeof NOTION_QUEUE_KV !== 'undefined' && !!NOTION_QUEUE_KV,
+    NOTION_QUEUE_KV_type: typeof NOTION_QUEUE_KV !== 'undefined' ? typeof NOTION_QUEUE_KV : 'undefined',
     globalThis_exists: typeof globalThis !== 'undefined',
     globalThis_NOTION_QUEUE_KV: typeof globalThis !== 'undefined' && !!globalThis.NOTION_QUEUE_KV
   };
@@ -41,57 +66,90 @@ export async function GET(req, context) {
     NODE_ENV: process.env.NODE_ENV || 'unknown',
     hasNotionToken: !!process.env.NOTION_TOKEN,
     hasJWTSecret: !!process.env.JWT_SECRET,
-    hasMatrixDbId: !!process.env.MATRIX_DB_ID
+    hasMatrixDbId: !!process.env.MATRIX_DB_ID,
+    processEnvKeys: Object.keys(process.env).filter(key => 
+      key.includes('NOTION') || key.includes('KV') || key.includes('JWT')
+    )
   };
 
-  // 4. Попытка инициализации KV с context
-  try {
-    console.log('[KV DIAGNOSTICS] 🔧 Инициализация KV с переданным context...');
-    const kvInitResult = initKV(context); // Передаем context!
-    diagnostics.kvInitialization = {
-      success: kvInitResult,
+  // 4. МНОЖЕСТВЕННЫЕ попытки инициализации KV с детальным логированием
+  console.log('[KV DIAGNOSTICS] 🔧 Попытка инициализации KV БЕЗ context...');
+  const kvInitWithoutContext = initKV();
+  
+  console.log('[KV DIAGNOSTICS] 🔧 Попытка инициализации KV С context...');
+  const kvInitWithContext = initKV(context);
+  
+  // Получаем детальную диагностику из KV модуля
+  const kvDiagnostics = getKVDiagnostics();
+  
+  diagnostics.kvInitialization = {
+    withoutContext: {
+      success: kvInitWithoutContext,
+      connected: isKVConnected()
+    },
+    withContext: {
+      success: kvInitWithContext,
+      connected: isKVConnected()
+    },
+    details: kvDiagnostics,
+    finalStatus: {
       connected: isKVConnected(),
-      error: null,
-      withContext: true
-    };
-  } catch (initError) {
-    diagnostics.kvInitialization = {
-      success: false,
-      connected: false,
-      error: initError.message,
-      withContext: true
-    };
-  }
+      hasNamespace: kvDiagnostics.hasNamespace,
+      initAttempts: kvDiagnostics.initAttempts
+    }
+  };
 
-  // 4. Тестирование KV операций (если доступно)
-  if (isKVConnected() && typeof NOTION_QUEUE_KV !== 'undefined') {
+  // 5. Тестирование KV операций (если доступно)
+  if (isKVConnected()) {
+    console.log('[KV DIAGNOSTICS] 🧪 KV доступно, проводим тестирование...');
     try {
-      const testKey = `diagnostic_test_${Date.now()}`;
-      const testValue = 'diagnostic_test_value';
+      const testKey = `diagnostic_test_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const testValue = JSON.stringify({
+        test: 'diagnostic_value', 
+        timestamp: Date.now(),
+        random: Math.random()
+      });
+      
+      console.log(`[KV DIAGNOSTICS] ✍️ Тестируем PUT: ${testKey}`);
       
       // Тест записи
-      await NOTION_QUEUE_KV.put(testKey, testValue, { expirationTtl: 60 });
+      await context?.env?.NOTION_QUEUE_KV?.put(testKey, testValue, { expirationTtl: 60 }) ||
+            NOTION_QUEUE_KV?.put(testKey, testValue, { expirationTtl: 60 });
+      
+      console.log(`[KV DIAGNOSTICS] 📖 Тестируем GET: ${testKey}`);
       
       // Тест чтения
-      const retrievedValue = await NOTION_QUEUE_KV.get(testKey);
+      const retrievedValue = await context?.env?.NOTION_QUEUE_KV?.get(testKey) ||
+                            NOTION_QUEUE_KV?.get(testKey);
+      
+      console.log(`[KV DIAGNOSTICS] 🗑️ Тестируем DELETE: ${testKey}`);
       
       // Тест удаления
-      await NOTION_QUEUE_KV.delete(testKey);
+      await context?.env?.NOTION_QUEUE_KV?.delete(testKey) ||
+            NOTION_QUEUE_KV?.delete(testKey);
+      
+      const testSuccess = retrievedValue === testValue;
       
       diagnostics.kvOperations = {
         put: true,
-        get: retrievedValue === testValue,
+        get: testSuccess,
         delete: true,
-        overall: retrievedValue === testValue
+        overall: testSuccess,
+        testKey: testKey,
+        expectedValue: testValue,
+        retrievedValue: retrievedValue,
+        valuesMatch: retrievedValue === testValue
       };
       
     } catch (kvError) {
+      console.error('[KV DIAGNOSTICS] ❌ Ошибка KV операций:', kvError);
       diagnostics.kvOperations = {
         put: false,
         get: false,
         delete: false,
         overall: false,
-        error: kvError.message
+        error: kvError.message,
+        stack: kvError.stack
       };
     }
   } else {
@@ -100,110 +158,103 @@ export async function GET(req, context) {
       get: false,
       delete: false,
       overall: false,
-      reason: 'KV не подключен или недоступен'
+      reason: 'KV не подключен или недоступен',
+      kvConnected: isKVConnected(),
+      kvDiagnostics: kvDiagnostics
     };
   }
 
-  // 5. Анализ проблем и рекомендации для Cloudflare Pages
+  // 6. ДЕТАЛЬНЫЙ анализ проблем для Pages
   const issues = [];
   const recommendations = [];
 
-  // Проверка для Pages-специфичных проблем
+  // Анализ по приоритету проблем
   if (!diagnostics.context.provided) {
-    issues.push('Context не предоставлен в API route');
-    recommendations.push('Убедитесь что context передается в API endpoint');
-  }
-
-  if (!diagnostics.context.contextEnvKV && !diagnostics.context.contextBindingsKV && !diagnostics.globalVariables.NOTION_QUEUE_KV_exists) {
-    issues.push('NOTION_QUEUE_KV не найден ни в context, ни в глобальных переменных');
-    recommendations.push('🔧 Настройте KV binding в Cloudflare Pages Dashboard:');
-    recommendations.push('   1. Pages → Settings → Functions → KV namespace bindings');
-    recommendations.push('   2. Variable name: NOTION_QUEUE_KV');
-    recommendations.push('   3. Выберите ваш KV namespace');
-    recommendations.push('   4. Сохраните настройки');
-  }
-
-  if (diagnostics.context.provided && !diagnostics.context.hasEnv) {
-    issues.push('Context предоставлен, но не содержит env объект');
-    recommendations.push('Проверьте передачу context в API route');
-  }
-
-  if (!diagnostics.kvInitialization.success) {
-    issues.push('Инициализация KV неудачна');
+    issues.push('🚨 КРИТИЧНО: Context не предоставлен в API route');
+    recommendations.push('❗ Убедитесь что context передается во все API endpoints');
+    recommendations.push('📝 Пример: export async function GET(req, context) { ... }');
+  } else if (!diagnostics.context.hasEnv) {
+    issues.push('🚨 КРИТИЧНО: Context предоставлен, но не содержит env объект');
+    recommendations.push('❗ Проверьте что context.env доступен');
+    recommendations.push('🔍 Context должен содержать: { env: { NOTION_QUEUE_KV: ... } }');
+  } else if (!diagnostics.context.contextEnvKV) {
+    issues.push('🚨 КРИТИЧНО: NOTION_QUEUE_KV отсутствует в context.env');
+    recommendations.push('❗ Проверьте настройки KV binding в Cloudflare Pages Dashboard');
+    recommendations.push('🔧 Pages → Settings → Functions → KV namespace bindings');
+    recommendations.push('📝 Variable name должно быть: NOTION_QUEUE_KV');
+    recommendations.push('🔄 После изменений ОБЯЗАТЕЛЬНО переразверните: npm run cf:deploy');
+  } else if (!diagnostics.kvInitialization.withContext.success) {
+    issues.push('⚠️ KV найден в context, но инициализация неудачна');
     recommendations.push('🔄 Переразверните приложение: npm run cf:deploy');
-    recommendations.push('🔍 Проверьте диагностику после развертывания');
+    recommendations.push('🔍 Проверьте логи развертывания на наличие ошибок');
+  } else if (!diagnostics.kvOperations.overall) {
+    issues.push('⚠️ KV инициализирован, но операции не работают');
+    recommendations.push('📊 Проверьте статус KV namespace в Cloudflare Dashboard');
+    recommendations.push('🔧 Убедитесь что KV namespace не был удален или поврежден');
+    recommendations.push('💾 Попробуйте создать новый KV namespace');
   }
 
-  if (!diagnostics.kvOperations.overall) {
-    issues.push('KV операции не работают');
-    recommendations.push('📊 Проверьте права доступа и статус KV namespace в Cloudflare Dashboard');
-    recommendations.push('🔧 Убедитесь что KV namespace не был удален');
+  // Дополнительные проверки
+  if (diagnostics.context.envKVVariations.length > 0 && !diagnostics.context.contextEnvKV) {
+    issues.push(`🔍 В context.env найдены KV-подобные переменные: ${diagnostics.context.envKVVariations.join(', ')}`);
+    recommendations.push('🔧 Проверьте правильность названия KV binding (должно быть NOTION_QUEUE_KV)');
+  }
+
+  if (diagnostics.kvInitialization.details.initAttempts > 3) {
+    issues.push(`⚠️ Слишком много попыток инициализации: ${diagnostics.kvInitialization.details.initAttempts}`);
+    recommendations.push('🔄 Очистите кэш и переразверните приложение');
   }
 
   if (issues.length === 0) {
     issues.push('✅ Проблем не найдено');
-    recommendations.push('🎉 Cloudflare KV настроен и работает корректно для Pages');
+    recommendations.push('🎉 Cloudflare KV настроен и работает корректно');
   }
 
   diagnostics.analysis = {
     issues,
     recommendations,
-    status: issues.length === 1 && issues[0] === '✅ Проблем не найдено' ? 'healthy' : 'issues_found'
+    status: issues.length === 1 && issues[0] === '✅ Проблем не найдено' ? 'healthy' : 'issues_found',
+    priority: issues.length > 0 && issues[0].includes('КРИТИЧНО') ? 'critical' : 'normal'
   };
 
-  // 6. Пошаговое руководство по устранению неполадок для Pages
+  // 7. Специфичное руководство для этой ситуации
   diagnostics.troubleshooting = {
-    step1: {
-      title: "🔧 Настройте KV binding в Pages Dashboard",
-      description: "Основной способ привязки KV для Cloudflare Pages",
-      instructions: [
-        "Откройте Cloudflare Dashboard",
-        "Перейдите в Workers & Pages → Overview",
-        "Найдите ваш проект 'specnaz-forms'",
-        "Settings → Functions → KV namespace bindings",
-        "Add binding: Variable name = NOTION_QUEUE_KV",
-        "Выберите ваш KV namespace",
-        "Save"
-      ],
-      check: diagnostics.context.contextEnvKV || diagnostics.context.contextBindingsKV
-    },
-    step2: {
-      title: "📦 Создайте KV namespace (если не создан)",
-      description: "Убедитесь что KV namespace существует",
-      commands: [
-        "wrangler kv:namespace create notion-queue-kv",
-        "Скопируйте ID из вывода команды",
-        "Используйте этот ID в Dashboard"
-      ],
-      check: diagnostics.globalVariables.NOTION_QUEUE_KV_truthy || diagnostics.context.contextEnvKV
-    },
-    step3: {
-      title: "🚀 Переразверните приложение",
-      description: "После изменений в Dashboard обязательно переразверните",
-      commands: [
-        "npm run cf:deploy"
-      ],
-      check: diagnostics.kvInitialization.success
-    },
-    step4: {
-      title: "✅ Проверьте KV операции",
-      description: "Убедитесь что KV работает корректно",
-      check: diagnostics.kvOperations.overall
-    },
-    pages_specific: {
-      title: "📋 Специфика Cloudflare Pages",
-      notes: [
-        "В Pages KV bindings настраиваются через Dashboard, а не wrangler.toml",
-        "wrangler.toml используется только для локальной разработки",
-        "KV доступен через context.env в Pages Functions",
-        "После изменений в Dashboard нужно переразвернуть приложение"
+    currentSituation: "KV binding настроен в Dashboard, но код не может получить доступ",
+    mostLikelyIssue: !diagnostics.context.provided ? "Context не передается" :
+                     !diagnostics.context.hasEnv ? "Context.env недоступен" :
+                     !diagnostics.context.contextEnvKV ? "Нужно переразвернуть приложение" :
+                     "Проблема с KV namespace",
+    
+    immediateActions: [
+      "1. 🔄 Переразверните приложение: npm run cf:deploy",
+      "2. ⏳ Подождите 2-3 минуты после развертывания", 
+      "3. 🔍 Обновите эту страницу диагностики",
+      "4. 📋 Если не помогло - проверьте логи развертывания"
+    ],
+    
+    verificationSteps: [
+      "✅ KV binding настроен в Dashboard: " + (diagnostics.context.contextEnvKV ? "ДА" : "НЕТ"),
+      "✅ Context передается в API: " + (diagnostics.context.provided ? "ДА" : "НЕТ"), 
+      "✅ Context.env доступен: " + (diagnostics.context.hasEnv ? "ДА" : "НЕТ"),
+      "✅ NOTION_QUEUE_KV в context.env: " + (diagnostics.context.contextEnvKV ? "ДА" : "НЕТ"),
+      "✅ KV операции работают: " + (diagnostics.kvOperations.overall ? "ДА" : "НЕТ")
+    ],
+    
+    nextSteps: diagnostics.kvOperations.overall ? 
+      ["🎉 Все работает! Можете использовать KV для больших операций"] :
+      [
+        "🔄 Если только что изменили настройки - переразверните приложение",
+        "⏳ Подождите несколько минут после развертывания",
+        "🔍 Проверьте логи в Cloudflare Dashboard → Pages → Functions",
+        "📞 Если проблема остается - обратитесь к администратору Cloudflare"
       ]
-    }
   };
 
-  // 7. Статус ответа на основе диагностики
+  // 8. Определяем статус ответа
   const statusCode = diagnostics.analysis.status === 'healthy' ? 200 : 503;
 
+  console.log(`[KV DIAGNOSTICS] 📊 Диагностика завершена. Статус: ${diagnostics.analysis.status}`);
+  
   return NextResponse.json(diagnostics, { status: statusCode });
 }
 
@@ -213,76 +264,79 @@ export async function POST(req, context) {
     const body = await req.json();
     
     if (body.action === 'force_test') {
-      console.log('[KV DIAGNOSTICS] 🧪 Принудительное тестирование KV для Pages');
+      console.log('[KV DIAGNOSTICS] 🧪 ПРИНУДИТЕЛЬНОЕ тестирование KV...');
       
       // Принудительная переинициализация с context
       const kvInitResult = initKV(context);
       
+      const testResults = {
+        initWithContext: kvInitResult,
+        kvConnected: isKVConnected(),
+        contextProvided: !!context,
+        contextHasEnv: !!context?.env,
+        contextHasKV: !!context?.env?.NOTION_QUEUE_KV,
+        kvDiagnostics: getKVDiagnostics()
+      };
+      
       if (!isKVConnected()) {
         return NextResponse.json({
           success: false,
-          message: "❌ KV недоступно для тестирования",
-          kvConnected: false,
-          context: {
-            provided: !!context,
-            hasEnv: !!context?.env,
-            envKeys: context?.env ? Object.keys(context.env) : [],
-            hasKVInEnv: !!context?.env?.NOTION_QUEUE_KV,
-            hasBindings: !!context?.bindings,
-            hasKVInBindings: !!context?.bindings?.NOTION_QUEUE_KV
-          }
+          message: "❌ KV недоступно для принудительного тестирования",
+          testResults,
+          recommendations: [
+            "🔄 Переразверните приложение: npm run cf:deploy",
+            "⏳ Подождите 2-3 минуты",
+            "🔍 Проверьте настройки KV binding в Dashboard"
+          ]
         }, { status: 503 });
       }
       
-      // Расширенное тестирование для Pages
-      const testResults = {
-        initWithContext: kvInitResult,
-        kvConnected: isKVConnected()
-      };
-      
+      // Интенсивное тестирование
       try {
-        // Тест множественных операций
-        const testData = Array.from({ length: 5 }, (_, i) => ({
-          key: `pages_bulk_test_${Date.now()}_${i}`,
-          value: `test_value_${i}`
+        const testData = Array.from({ length: 3 }, (_, i) => ({
+          key: `force_test_${Date.now()}_${i}`,
+          value: JSON.stringify({ test: `force_value_${i}`, timestamp: Date.now() })
         }));
         
         // Запись
         for (const { key, value } of testData) {
-          await KV_NAMESPACE.put(key, value, { expirationTtl: 60 });
+          await context?.env?.NOTION_QUEUE_KV?.put(key, value, { expirationTtl: 60 }) ||
+                NOTION_QUEUE_KV?.put(key, value, { expirationTtl: 60 });
         }
         testResults.bulkPut = true;
         
         // Чтение
         for (const { key, value } of testData) {
-          const retrieved = await KV_NAMESPACE.get(key);
+          const retrieved = await context?.env?.NOTION_QUEUE_KV?.get(key) ||
+                           NOTION_QUEUE_KV?.get(key);
           if (retrieved !== value) {
-            throw new Error(`Mismatch for key ${key}`);
+            throw new Error(`Mismatch for key ${key}: expected ${value}, got ${retrieved}`);
           }
         }
         testResults.bulkGet = true;
         
         // Очистка
         for (const { key } of testData) {
-          await KV_NAMESPACE.delete(key);
+          await context?.env?.NOTION_QUEUE_KV?.delete(key) ||
+                NOTION_QUEUE_KV?.delete(key);
         }
         testResults.bulkDelete = true;
         
         testResults.overall = true;
-         
+        
       } catch (error) {
         testResults.overall = false;
         testResults.error = error.message;
+        testResults.errorStack = error.stack;
       }
       
       return NextResponse.json({
         success: testResults.overall,
         message: testResults.overall ? 
-          "✅ Расширенное тестирование KV для Pages прошло успешно" : 
-          "❌ Расширенное тестирование KV для Pages неудачно",
+          "✅ Принудительное тестирование KV прошло успешно! 🎉" : 
+          "❌ Принудительное тестирование KV неудачно",
         testResults,
-        timestamp: new Date().toISOString(),
-        platform: "Cloudflare Pages"
+        timestamp: new Date().toISOString()
       });
     }
     
