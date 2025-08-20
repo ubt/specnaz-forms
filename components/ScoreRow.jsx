@@ -217,7 +217,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
             display: 'grid',
             gridTemplateColumns: 'repeat(6, 1fr)',
             gap: 12,
-            fontSize: 11,
+            fontSize: 10,
             color: '#6c757d',
             textAlign: 'center',
             width: '100%'
@@ -247,10 +247,8 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           color: '#856404',
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 6
         }}>
-          <span>⏳</span>
-          <span>Сохранение изменений...</span>
+		gap: 6
         </div>
       )}
     </div>
