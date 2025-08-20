@@ -248,7 +248,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
           display: 'inline-flex',
           alignItems: 'center',
         }}>
-		gap: 6
         </div>
       )}
     </div>
