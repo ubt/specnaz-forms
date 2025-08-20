@@ -8,7 +8,9 @@
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
     "cf:deploy": "npm run build && npx @cloudflare/next-on-pages && wrangler pages deploy .vercel/output/static",
     "kv:list": "wrangler kv:namespace list",
-    "kv:create": "wrangler kv:namespace create notion-queue-kv"
+    "kv:create": "wrangler kv:namespace create notion-queue-kv",
+    "worker:dev": "wrangler dev --config wrangler.worker.toml",
+    "worker:deploy": "wrangler deploy --config wrangler.worker.toml"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",
