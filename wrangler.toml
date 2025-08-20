@@ -1,4 +1,4 @@
-# wrangler.toml - Конфигурация для Cloudflare Pages
+# wrangler.toml - ИСПРАВЛЕННАЯ конфигурация для Cloudflare Pages
 name = "specnaz-forms"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
@@ -8,12 +8,19 @@ pages_build_output_dir = ".vercel/output/static"
 [limits] 
 cpu_ms = 60000
 
-# Привязка KV Namespace
+# ДЛЯ CLOUDFLARE PAGES: KV bindings настраиваются через Dashboard!
+# Эта секция служит только для локальной разработки с wrangler dev
 [[kv_namespaces]]
-binding = "NOTION_QUEUE_KV"  						# Имя переменной в коде
-preview_id = "9d4ff43755a34cdb8559b86a95b2cfa1"  					# Ваш Namespace ID
-id = "9d4ff43755a34cdb8559b86a95b2cfa1"          	# Ваш Namespace ID
+binding = "NOTION_QUEUE_KV"
+id = "9d4ff43755a34cdb8559b86a95b2cfa1"
+preview_id = "9d4ff43755a34cdb8559b86a95b2cfa1"
 
-# Переменные окружения (при необходимости)
+# Переменные окружения
 [vars]
-ENVIRONMENT = "production" 
+ENVIRONMENT = "production"
+
+# Для локального development (если планируете использовать wrangler dev)
+[env.development]
+[[env.development.kv_namespaces]]
+binding = "NOTION_QUEUE_KV"
+id = "9d4ff43755a34cdb8559b86a95b2cfa1"
