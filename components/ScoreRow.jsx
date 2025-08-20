@@ -233,22 +233,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
 
         </div>
       </div>
-
-      {/* Индикатор изменений */}
-      {isDirty && (
-        <div style={{
-          marginTop: 12,
-          padding: '6px 12px',
-          backgroundColor: '#fff3cd',
-          border: '1px solid #ffeaa7',
-          borderRadius: 6,
-          fontSize: 12,
-          color: '#856404',
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}>
-        </div>
-      )}
     </div>
   );
 });
