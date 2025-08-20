@@ -56,7 +56,6 @@ const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
         backgroundColor: colorScheme.bg,
         borderColor: colorScheme.border,
         color: colorScheme.color,
-        boxShadow: `0 0 0 3px ${colorScheme.border}20`
       };
     } else {
       return {
