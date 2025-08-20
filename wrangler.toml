@@ -8,19 +8,7 @@ pages_build_output_dir = ".vercel/output/static"
 [limits] 
 cpu_ms = 60000
 
-# ДЛЯ CLOUDFLARE PAGES: KV bindings настраиваются через Dashboard!
-# Эта секция служит только для локальной разработки с wrangler dev
-[[kv_namespaces]]
-binding = "NOTION_QUEUE_KV"
-id = "9d4ff43755a34cdb8559b86a95b2cfa1"
-preview_id = "9d4ff43755a34cdb8559b86a95b2cfa1"
-
 # Переменные окружения
 [vars]
 ENVIRONMENT = "production"
 
-# Для локального development (если планируете использовать wrangler dev)
-[env.development]
-[[env.development.kv_namespaces]]
-binding = "NOTION_QUEUE_KV"
-id = "9d4ff43755a34cdb8559b86a95b2cfa1"
