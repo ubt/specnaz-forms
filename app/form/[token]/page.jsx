@@ -113,317 +113,6 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   return children;
 };
 
-// Компонент для отображения прогресса KV batch операции
-const KVBatchProgressModal = ({ isOpen, progress, onClose, onCancel }) => {
-  if (!isOpen) return null;
-
-  const getStatusIcon = (mode) => {
-    switch (mode) {
-      case 'kv_queue': return '🔄';
-      case 'direct': return '⚡';
-      default: return '📊';
-    }
-  };
-
-  const getStatusColor = (mode) => {
-    switch (mode) {
-      case 'kv_queue': return '#28a745';
-      case 'direct': return '#007bff';
-      default: return '#6c757d';
-    }
-  };
-
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 32,
-        maxWidth: 600,
-        width: '90%',
-        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-        border: '1px solid #e9ecef'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ 
-            fontSize: 48, 
-            marginBottom: 12,
-            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
-          }}>
-            {getStatusIcon(progress.mode)}
-          </div>
-          <h3 style={{ 
-            fontSize: 22, 
-            fontWeight: 700,
-            color: '#2c3e50',
-            margin: 0,
-            marginBottom: 8
-          }}>
-            Обработка оценок
-          </h3>
-          <p style={{
-            color: '#6c757d',
-            fontSize: 14,
-            margin: 0
-          }}>
-            {progress.mode === 'kv_queue' ? 
-              'Cloudflare KV обрабатывает ваши операции' : 
-              'Прямая обработка операций'
-            }
-          </p>
-        </div>
-        
-        {/* Основной прогресс-бар */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 8
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: '#495057' }}>
-              Общий прогресс
-            </span>
-            <span style={{ fontSize: 14, color: '#6c757d' }}>
-              {progress.processed || 0} из {progress.total || 0}
-            </span>
-          </div>
-          <div style={{
-            width: '100%',
-            height: 14,
-            backgroundColor: '#e9ecef',
-            borderRadius: 7,
-            overflow: 'hidden',
-            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{
-              width: `${Math.min(progress.progress || 0, 100)}%`,
-              height: '100%',
-              background: `linear-gradient(90deg, ${getStatusColor(progress.mode)}, ${getStatusColor(progress.mode)}dd)`,
-              borderRadius: 7,
-              transition: 'width 0.3s ease-out',
-              position: 'relative'
-            }}>
-              {/* Анимация для активного прогресса */}
-              {progress.progress > 0 && progress.progress < 100 && (
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: '20px',
-                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3))',
-                  animation: 'shimmer 2s infinite linear'
-                }} />
-              )}
-            </div>
-          </div>
-          <div style={{ 
-            textAlign: 'center', 
-            marginTop: 10, 
-            fontSize: 18, 
-            fontWeight: 700,
-            color: '#495057'
-          }}>
-            {(progress.progress || 0).toFixed(1)}%
-          </div>
-        </div>
-
-        {/* Информация о режиме обработки */}
-        <div style={{
-          backgroundColor: progress.mode === 'kv_queue' ? '#d4edda' : '#e7f3ff',
-          padding: 16,
-          borderRadius: 10,
-          marginBottom: 20,
-          border: `1px solid ${progress.mode === 'kv_queue' ? '#c3e6cb' : '#b8daff'}`
-        }}>
-          <div style={{
-            fontSize: 14,
-            color: progress.mode === 'kv_queue' ? '#155724' : '#004085',
-            fontWeight: 500,
-            lineHeight: 1.4
-          }}>
-            {progress.mode === 'kv_queue' ? (
-              <>
-                <strong>🚀 Cloudflare KV очереди</strong>
-                <div style={{ marginTop: 6 }}>
-                  {progress.completedJobs !== undefined && progress.totalJobs !== undefined ? (
-                    <span>Завершено задач: {progress.completedJobs}/{progress.totalJobs}</span>
-                  ) : (
-                    <span>Операции обрабатываются в фоновом режиме</span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <strong>⚡ Прямая обработка</strong>
-                <div style={{ marginTop: 6 }}>
-                  {progress.currentChunk && progress.totalChunks ? (
-                    <span>Пакет: {progress.currentChunk}/{progress.totalChunks}</span>
-                  ) : (
-                    <span>Операции выполняются последовательно</span>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Детальная статистика */}
-        {(progress.estimatedTimeRemaining || progress.averageTimePerOperation || progress.throughput) && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-            gap: 12,
-            marginBottom: 20,
-            fontSize: 13
-          }}>
-            {progress.estimatedTimeRemaining && (
-              <div style={{
-                backgroundColor: '#f8f9fa',
-                padding: 12,
-                borderRadius: 8,
-                textAlign: 'center'
-              }}>
-                <div style={{ fontWeight: 600, color: '#495057', marginBottom: 4 }}>
-                  Осталось
-                </div>
-                <div style={{ color: '#6c757d' }}>
-                  ~{Math.ceil(progress.estimatedTimeRemaining / 60)} мин
-                </div>
-              </div>
-            )}
-            {progress.averageTimePerOperation && (
-              <div style={{
-                backgroundColor: '#f8f9fa',
-                padding: 12,
-                borderRadius: 8,
-                textAlign: 'center'
-              }}>
-                <div style={{ fontWeight: 600, color: '#495057', marginBottom: 4 }}>
-                  Среднее время
-                </div>
-                <div style={{ color: '#6c757d' }}>
-                  {(progress.averageTimePerOperation / 1000).toFixed(1)}с
-                </div>
-              </div>
-            )}
-            {progress.throughput && (
-              <div style={{
-                backgroundColor: '#f8f9fa',
-                padding: 12,
-                borderRadius: 8,
-                textAlign: 'center'
-              }}>
-                <div style={{ fontWeight: 600, color: '#495057', marginBottom: 4 }}>
-                  Скорость
-                </div>
-                <div style={{ color: '#6c757d' }}>
-                  {progress.throughput} оп/с
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Статус сообщение */}
-        {progress.message && (
-          <div style={{
-            padding: 14,
-            backgroundColor: '#f1f3f4',
-            borderRadius: 8,
-            fontSize: 14,
-            color: '#495057',
-            marginBottom: 20,
-            textAlign: 'center',
-            border: '1px solid #e9ecef'
-          }}>
-            {progress.message}
-          </div>
-        )}
-
-        {/* Детали задач для KV режима */}
-        {progress.mode === 'kv_queue' && (progress.activeJobs > 0 || progress.failedJobs > 0) && (
-          <div style={{
-            backgroundColor: '#fff3cd',
-            padding: 12,
-            borderRadius: 8,
-            marginBottom: 20,
-            fontSize: 13,
-            border: '1px solid #ffeaa7'
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: 6, color: '#856404' }}>
-              Статус задач:
-            </div>
-            <div style={{ color: '#856404' }}>
-              {progress.activeJobs > 0 && <span>🔄 Активных: {progress.activeJobs} </span>}
-              {progress.failedJobs > 0 && <span>❌ Неудачных: {progress.failedJobs} </span>}
-              {progress.completedJobs > 0 && <span>✅ Завершенных: {progress.completedJobs}</span>}
-            </div>
-          </div>
-        )}
-
-        {/* Кнопки управления */}
-        <div style={{
-          display: 'flex',
-          gap: 12,
-          justifyContent: 'center'
-        }}>
-          {progress.canCancel && (
-            <button
-              onClick={onCancel}
-              style={{
-                padding: '12px 20px',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background-color 0.2s ease'
-              }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = '#c82333'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = '#dc3545'}
-            >
-              Отменить
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            style={{
-              padding: '12px 20px',
-              backgroundColor: '#6c757d',
-              color: 'white',
-              border: 'none',
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#545b62'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#6c757d'}
-          >
-            Скрыть
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 function useSkillsData(token) {
   const [state, setState] = useState({
     skillGroups: [],
@@ -535,10 +224,6 @@ export default function SkillsAssessmentForm({ params }) {
   const { token } = params;
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
-  const [batchProgress, setBatchProgress] = useState(null);
-  const [showProgressModal, setShowProgressModal] = useState(false);
-  const [batchJobIds, setBatchJobIds] = useState(null);
-  const [completedResults, setCompletedResults] = useState(null);
   
   const {
     skillGroups,
@@ -562,112 +247,6 @@ export default function SkillsAssessmentForm({ params }) {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  // Функция для отслеживания прогресса KV batch операций
-  const trackKVBatchProgress = useCallback(async (jobIds, mode) => {
-    if (!jobIds || jobIds.length === 0) return;
-    
-    console.log(`[PROGRESS] Начинаем отслеживание ${jobIds.length} задач в режиме ${mode}`);
-    setBatchJobIds(jobIds);
-    setShowProgressModal(true);
-    
-    const startTime = Date.now();
-    let lastProgress = 0;
-    
-    const trackingInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/batch/status?jobIds=${jobIds.join(',')}&detailed=true`);
-        const statusData = await response.json();
-        
-        if (response.ok && statusData.success) {
-          const currentProgress = statusData.overallProgress || statusData.averageProgress || 0;
-          const processed = Math.round((currentProgress / 100) * totalSkills);
-          
-          // Рассчитываем приблизительную скорость обработки
-          const elapsedTime = (Date.now() - startTime) / 1000;
-          const throughput = processed > 0 && elapsedTime > 0 ? (processed / elapsedTime).toFixed(1) : null;
-          
-          // Оценка оставшегося времени
-          let estimatedTimeRemaining = null;
-          if (currentProgress > lastProgress && currentProgress < 100) {
-            const progressRate = (currentProgress - lastProgress) / 10; // Прогресс за 10 секунд
-            if (progressRate > 0) {
-              const remainingProgress = 100 - currentProgress;
-              estimatedTimeRemaining = (remainingProgress / progressRate) * 10; // В секундах
-            }
-          }
-          
-          lastProgress = currentProgress;
-          
-          setBatchProgress({
-            mode: mode,
-            processed: processed,
-            total: totalSkills,
-            progress: currentProgress,
-            completedJobs: statusData.completedJobs || 0,
-            totalJobs: statusData.totalJobs || jobIds.length,
-            activeJobs: statusData.processingJobs || statusData.activeJobs || 0,
-            failedJobs: statusData.failedJobs || 0,
-            estimatedTimeRemaining: estimatedTimeRemaining,
-            throughput: throughput,
-            message: statusData.isCompleted ? 
-              `Обработка завершена! Успешно: ${statusData.completedJobs}/${statusData.totalJobs}` :
-              statusData.processingJobs > 0 ? 
-                `Обрабатывается ${statusData.processingJobs} задач...` :
-                `Ожидание обработки...`,
-            canCancel: false, // KV операции нельзя отменить
-            timestamp: Date.now()
-          });
-          
-          // Проверяем завершение
-          if (statusData.isCompleted || statusData.completedJobs === statusData.totalJobs) {
-            console.log('[PROGRESS] Все задачи завершены, загружаем результаты');
-            clearInterval(trackingInterval);
-            
-            // Загружаем финальные результаты
-            setTimeout(async () => {
-              try {
-                const resultsResponse = await fetch(`/api/batch/results?jobIds=${jobIds.join(',')}&format=summary`);
-                if (resultsResponse.ok) {
-                  const resultsData = await resultsResponse.json();
-                  setCompletedResults(resultsData);
-                  
-                  setBatchProgress(prev => ({
-                    ...prev,
-                    message: `Завершено! Успешно: ${resultsData.summary?.successful || 0}/${resultsData.summary?.totalResults || 0}`,
-                    progress: 100,
-                    showResults: true
-                  }));
-                }
-              } catch (resultsError) {
-                console.error('[PROGRESS] Ошибка загрузки результатов:', resultsError.message);
-              }
-            }, 1000);
-          }
-        } else {
-          console.error('[PROGRESS] Ошибка получения статуса:', statusData.error);
-          
-          // Если KV недоступно, останавливаем отслеживание
-          if (statusData.error?.includes('KV')) {
-            clearInterval(trackingInterval);
-            setBatchProgress(prev => ({
-              ...prev,
-              message: 'Статус недоступен (KV отключено)',
-              canCancel: false
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('[PROGRESS] Ошибка отслеживания:', error.message);
-      }
-    }, 10000); // Проверяем каждые 10 секунд (реже чем Redis версия)
-
-    // Автоматическая остановка через 15 минут
-    setTimeout(() => {
-      clearInterval(trackingInterval);
-      console.log('[PROGRESS] Отслеживание остановлено по таймауту');
-    }, 15 * 60 * 1000);
-  }, [totalSkills]);
-
 // ИСПРАВЛЕННАЯ функция для обработки отправки формы с лучшей обработкой KV
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
@@ -679,7 +258,6 @@ export default function SkillsAssessmentForm({ params }) {
 
     setSubmitting(true);
     setSubmitMessage('');
-    setCompletedResults(null);
     
     try {
       // Преобразуем scoreData в формат операций для batch API
@@ -747,10 +325,7 @@ export default function SkillsAssessmentForm({ params }) {
       if (result.mode === 'kv_queue') {
         // KV очереди используются
         setSubmitMessage(`🔄 Операции добавлены в Cloudflare KV очередь. Создано ${result.totalJobs} задач для обработки ${result.totalOperations} операций.`);
-        
-        // Запускаем отслеживание прогресса
-        trackKVBatchProgress(result.jobIds, result.mode);
-        
+
       } else if (result.mode === 'direct_processing' || result.mode === 'direct') {
         // Прямая обработка завершена
         const successRate = result.stats.totalOperations > 0 ?
@@ -801,17 +376,7 @@ export default function SkillsAssessmentForm({ params }) {
     } finally {
       setSubmitting(false);
     }
-  }, [scoreData, token, trackKVBatchProgress]);
-  const handleCloseProgressModal = useCallback(() => {
-    setShowProgressModal(false);
-    setBatchProgress(null);
-  }, []);
-
-  const handleCancelBatch = useCallback(() => {
-    // KV операции нельзя отменить, но можем скрыть модал
-    setShowProgressModal(false);
-    setSubmitMessage('⚠️ Операции продолжают обрабатываться в фоне');
-  }, []);
+  }, [scoreData, token]);
 
   return (
     <div style={{ 
@@ -1115,14 +680,6 @@ export default function SkillsAssessmentForm({ params }) {
           </form>
         </div>
       </StateHandler>
-
-      {/* Модал прогресса KV batch операций */}
-      <KVBatchProgressModal
-        isOpen={showProgressModal}
-        progress={batchProgress || {}}
-        onClose={handleCloseProgressModal}
-        onCancel={handleCancelBatch}
-      />
 
       {!loading && (
         <div style={{
