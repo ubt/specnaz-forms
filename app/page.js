@@ -108,19 +108,6 @@ export default function Home() {
           </p>
         </div>
       </div>
-
-      {/* Статус системы */}
-      <div style={{
-        marginTop: 24,
-        padding: 16,
-        background: '#d4edda',
-        border: '1px solid #c3e6cb',
-        borderRadius: 8,
-        fontSize: 14,
-        color: '#155724'
-      }}>
-        <strong>✅ Готово к работе:</strong> Система настроена и готова к использованию. Используйте админ-панель для создания ссылок оценки.
-      </div>
     </main>
   );
 }
