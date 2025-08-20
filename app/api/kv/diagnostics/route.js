@@ -1,11 +1,12 @@
-// app/api/kv/diagnostics/route.js - ОБНОВЛЕННАЯ диагностика для выявления проблем
+// app/api/kv/diagnostics/route.js - ИСПРАВЛЕННАЯ диагностика KV для Next.js на Pages
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
+import { getRequestContext } from '@cloudflare/next-on-pages';
 import { initKV, isKVConnected, getKVDiagnostics } from "@/lib/kv-queue";
 
-export async function GET(req, context) {
-  console.log('[KV DIAGNOSTICS] 🔍 УГЛУБЛЕННАЯ диагностика Cloudflare KV для Pages');
+export async function GET(req) {
+  console.log('[KV DIAGNOSTICS] 🔍 Запуск диагностики Cloudflare KV для Next.js на Pages');
   
   const diagnostics = {
     timestamp: new Date().toISOString(),
@@ -14,334 +15,332 @@ export async function GET(req, context) {
     url: req.url
   };
 
-  // 1. ДЕТАЛЬНАЯ проверка context
-  diagnostics.context = {
-    provided: !!context,
-    type: typeof context,
-    isNull: context === null,
-    isUndefined: context === undefined,
-    
-    // Проверяем все возможные свойства context
-    hasEnv: !!context?.env,
-    hasBindings: !!context?.bindings,
-    hasCloudflare: !!context?.cloudflare,
-    hasWaitUntil: !!context?.waitUntil,
-    hasParams: !!context?.params,
-    
-    // Ключи объектов
-    contextKeys: context ? Object.keys(context) : [],
-    envKeys: context?.env ? Object.keys(context.env) : [],
-    bindingsKeys: context?.bindings ? Object.keys(context.bindings) : [],
-    
-    // СПЕЦИФИЧНАЯ проверка KV в context
-    contextEnvKV: !!context?.env?.NOTION_QUEUE_KV,
-    contextEnvKVType: context?.env?.NOTION_QUEUE_KV ? typeof context.env.NOTION_QUEUE_KV : 'undefined',
-    contextBindingsKV: !!context?.bindings?.NOTION_QUEUE_KV,
-    contextDirectKV: !!context?.NOTION_QUEUE_KV,
-    
-    // Проверяем альтернативные названия KV в env
-    envKVVariations: context?.env ? Object.keys(context.env).filter(key => 
-      key.includes('KV') || key.includes('NOTION') || key.includes('QUEUE')
-    ) : [],
-    
-    // Сериализация context для анализа (обрезанная)
-    contextSample: context ? {
-      keys: Object.keys(context),
-      envSample: context.env ? Object.keys(context.env).slice(0, 10) : null,
-      hasEnvNotionKV: !!context.env?.NOTION_QUEUE_KV
-    } : null
+  // 1. Проверка доступности getRequestContext
+  diagnostics.requestContext = {
+    available: false,
+    error: null,
+    contextKeys: [],
+    envKeys: [],
+    hasKVBinding: false
   };
 
-  // 2. Проверка глобальных переменных
-  diagnostics.globalVariables = {
-    NOTION_QUEUE_KV_exists: typeof NOTION_QUEUE_KV !== 'undefined',
-    NOTION_QUEUE_KV_truthy: typeof NOTION_QUEUE_KV !== 'undefined' && !!NOTION_QUEUE_KV,
-    NOTION_QUEUE_KV_type: typeof NOTION_QUEUE_KV !== 'undefined' ? typeof NOTION_QUEUE_KV : 'undefined',
-    globalThis_exists: typeof globalThis !== 'undefined',
-    globalThis_NOTION_QUEUE_KV: typeof globalThis !== 'undefined' && !!globalThis.NOTION_QUEUE_KV
-  };
+  try {
+    const { env } = getRequestContext();
+    diagnostics.requestContext = {
+      available: true,
+      error: null,
+      contextKeys: Object.keys(getRequestContext()),
+      envKeys: Object.keys(env || {}),
+      hasKVBinding: !!env.NOTION_QUEUE_KV,
+      kvType: env.NOTION_QUEUE_KV ? typeof env.NOTION_QUEUE_KV : 'undefined'
+    };
+    
+    console.log('[KV DIAGNOSTICS] ✅ getRequestContext() работает');
+  } catch (error) {
+    diagnostics.requestContext.error = error.message;
+    console.error('[KV DIAGNOSTICS] ❌ getRequestContext() недоступен:', error.message);
+  }
 
-  // 3. Проверка переменных окружения
+  // 2. Проверка переменных окружения
   diagnostics.environment = {
     NODE_ENV: process.env.NODE_ENV || 'unknown',
     hasNotionToken: !!process.env.NOTION_TOKEN,
     hasJWTSecret: !!process.env.JWT_SECRET,
     hasMatrixDbId: !!process.env.MATRIX_DB_ID,
-    processEnvKeys: Object.keys(process.env).filter(key => 
-      key.includes('NOTION') || key.includes('KV') || key.includes('JWT')
-    )
+    hasEmployeesDbId: !!process.env.EMPLOYEES_DB_ID
   };
 
-  // 4. МНОЖЕСТВЕННЫЕ попытки инициализации KV с детальным логированием
-  console.log('[KV DIAGNOSTICS] 🔧 Попытка инициализации KV БЕЗ context...');
-  const kvInitWithoutContext = initKV();
+  // 3. Инициализация и тестирование KV
+  console.log('[KV DIAGNOSTICS] 🔧 Тестируем инициализацию KV...');
   
-  console.log('[KV DIAGNOSTICS] 🔧 Попытка инициализации KV С context...');
-  const kvInitWithContext = initKV(context);
-  
-  // Получаем детальную диагностику из KV модуля
-  const kvDiagnostics = getKVDiagnostics();
+  const kvInitResult = initKV();
+  const kvDiagnosticsData = getKVDiagnostics();
   
   diagnostics.kvInitialization = {
-    withoutContext: {
-      success: kvInitWithoutContext,
-      connected: isKVConnected()
-    },
-    withContext: {
-      success: kvInitWithContext,
-      connected: isKVConnected()
-    },
-    details: kvDiagnostics,
-    finalStatus: {
-      connected: isKVConnected(),
-      hasNamespace: kvDiagnostics.hasNamespace,
-      initAttempts: kvDiagnostics.initAttempts
-    }
+    success: kvInitResult,
+    details: kvDiagnosticsData
   };
 
-  // 5. Тестирование KV операций (если доступно)
-  if (isKVConnected()) {
-    console.log('[KV DIAGNOSTICS] 🧪 KV доступно, проводим тестирование...');
+  // 4. Тестирование подключения к KV
+  diagnostics.kvConnection = {
+    connected: false,
+    error: null,
+    testResults: null
+  };
+
+  if (diagnostics.requestContext.hasKVBinding) {
     try {
-      const testKey = `diagnostic_test_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-      const testValue = JSON.stringify({
-        test: 'diagnostic_value', 
-        timestamp: Date.now(),
-        random: Math.random()
-      });
+      console.log('[KV DIAGNOSTICS] 🧪 Тестируем подключение к KV...');
       
-      console.log(`[KV DIAGNOSTICS] ✍️ Тестируем PUT: ${testKey}`);
+      const connected = await isKVConnected();
+      diagnostics.kvConnection.connected = connected;
       
-      // Тест записи
-      await context?.env?.NOTION_QUEUE_KV?.put(testKey, testValue, { expirationTtl: 60 }) ||
-            NOTION_QUEUE_KV?.put(testKey, testValue, { expirationTtl: 60 });
-      
-      console.log(`[KV DIAGNOSTICS] 📖 Тестируем GET: ${testKey}`);
-      
-      // Тест чтения
-      const retrievedValue = await context?.env?.NOTION_QUEUE_KV?.get(testKey) ||
-                            NOTION_QUEUE_KV?.get(testKey);
-      
-      console.log(`[KV DIAGNOSTICS] 🗑️ Тестируем DELETE: ${testKey}`);
-      
-      // Тест удаления
-      await context?.env?.NOTION_QUEUE_KV?.delete(testKey) ||
-            NOTION_QUEUE_KV?.delete(testKey);
-      
-      const testSuccess = retrievedValue === testValue;
-      
-      diagnostics.kvOperations = {
-        put: true,
-        get: testSuccess,
-        delete: true,
-        overall: testSuccess,
-        testKey: testKey,
-        expectedValue: testValue,
-        retrievedValue: retrievedValue,
-        valuesMatch: retrievedValue === testValue
-      };
-      
-    } catch (kvError) {
-      console.error('[KV DIAGNOSTICS] ❌ Ошибка KV операций:', kvError);
-      diagnostics.kvOperations = {
-        put: false,
-        get: false,
-        delete: false,
-        overall: false,
-        error: kvError.message,
-        stack: kvError.stack
-      };
+      if (connected) {
+        // Расширенное тестирование KV операций
+        const testResults = await performKVTests();
+        diagnostics.kvConnection.testResults = testResults;
+        console.log('[KV DIAGNOSTICS] ✅ KV тестирование завершено успешно');
+      } else {
+        diagnostics.kvConnection.error = 'KV connection test failed';
+        console.warn('[KV DIAGNOSTICS] ⚠️ KV подключение неудачно');
+      }
+    } catch (error) {
+      diagnostics.kvConnection.error = error.message;
+      console.error('[KV DIAGNOSTICS] ❌ Ошибка тестирования KV:', error.message);
     }
   } else {
-    diagnostics.kvOperations = {
-      put: false,
-      get: false,
-      delete: false,
-      overall: false,
-      reason: 'KV не подключен или недоступен',
-      kvConnected: isKVConnected(),
-      kvDiagnostics: kvDiagnostics
-    };
+    diagnostics.kvConnection.error = 'KV binding not found in environment';
+    console.warn('[KV DIAGNOSTICS] ⚠️ KV binding не найден');
   }
 
-  // 6. ДЕТАЛЬНЫЙ анализ проблем для Pages
-  const issues = [];
-  const recommendations = [];
+  // 5. Анализ проблем и рекомендации
+  const analysis = analyzeKVIssues(diagnostics);
+  diagnostics.analysis = analysis;
 
-  // Анализ по приоритету проблем
-  if (!diagnostics.context.provided) {
-    issues.push('🚨 КРИТИЧНО: Context не предоставлен в API route');
-    recommendations.push('❗ Убедитесь что context передается во все API endpoints');
-    recommendations.push('📝 Пример: export async function GET(req, context) { ... }');
-  } else if (!diagnostics.context.hasEnv) {
-    issues.push('🚨 КРИТИЧНО: Context предоставлен, но не содержит env объект');
-    recommendations.push('❗ Проверьте что context.env доступен');
-    recommendations.push('🔍 Context должен содержать: { env: { NOTION_QUEUE_KV: ... } }');
-  } else if (!diagnostics.context.contextEnvKV) {
-    issues.push('🚨 КРИТИЧНО: NOTION_QUEUE_KV отсутствует в context.env');
-    recommendations.push('❗ Проверьте настройки KV binding в Cloudflare Pages Dashboard');
-    recommendations.push('🔧 Pages → Settings → Functions → KV namespace bindings');
-    recommendations.push('📝 Variable name должно быть: NOTION_QUEUE_KV');
-    recommendations.push('🔄 После изменений ОБЯЗАТЕЛЬНО переразверните: npm run cf:deploy');
-  } else if (!diagnostics.kvInitialization.withContext.success) {
-    issues.push('⚠️ KV найден в context, но инициализация неудачна');
-    recommendations.push('🔄 Переразверните приложение: npm run cf:deploy');
-    recommendations.push('🔍 Проверьте логи развертывания на наличие ошибок');
-  } else if (!diagnostics.kvOperations.overall) {
-    issues.push('⚠️ KV инициализирован, но операции не работают');
-    recommendations.push('📊 Проверьте статус KV namespace в Cloudflare Dashboard');
-    recommendations.push('🔧 Убедитесь что KV namespace не был удален или поврежден');
-    recommendations.push('💾 Попробуйте создать новый KV namespace');
-  }
+  // 6. Определение статуса ответа
+  const isHealthy = diagnostics.kvConnection.connected && diagnostics.requestContext.available;
+  const statusCode = isHealthy ? 200 : 503;
 
-  // Дополнительные проверки
-  if (diagnostics.context.envKVVariations.length > 0 && !diagnostics.context.contextEnvKV) {
-    issues.push(`🔍 В context.env найдены KV-подобные переменные: ${diagnostics.context.envKVVariations.join(', ')}`);
-    recommendations.push('🔧 Проверьте правильность названия KV binding (должно быть NOTION_QUEUE_KV)');
-  }
-
-  if (diagnostics.kvInitialization.details.initAttempts > 3) {
-    issues.push(`⚠️ Слишком много попыток инициализации: ${diagnostics.kvInitialization.details.initAttempts}`);
-    recommendations.push('🔄 Очистите кэш и переразверните приложение');
-  }
-
-  if (issues.length === 0) {
-    issues.push('✅ Проблем не найдено');
-    recommendations.push('🎉 Cloudflare KV настроен и работает корректно');
-  }
-
-  diagnostics.analysis = {
-    issues,
-    recommendations,
-    status: issues.length === 1 && issues[0] === '✅ Проблем не найдено' ? 'healthy' : 'issues_found',
-    priority: issues.length > 0 && issues[0].includes('КРИТИЧНО') ? 'critical' : 'normal'
-  };
-
-  // 7. Специфичное руководство для этой ситуации
-  diagnostics.troubleshooting = {
-    currentSituation: "KV binding настроен в Dashboard, но код не может получить доступ",
-    mostLikelyIssue: !diagnostics.context.provided ? "Context не передается" :
-                     !diagnostics.context.hasEnv ? "Context.env недоступен" :
-                     !diagnostics.context.contextEnvKV ? "Нужно переразвернуть приложение" :
-                     "Проблема с KV namespace",
-    
-    immediateActions: [
-      "1. 🔄 Переразверните приложение: npm run cf:deploy",
-      "2. ⏳ Подождите 2-3 минуты после развертывания", 
-      "3. 🔍 Обновите эту страницу диагностики",
-      "4. 📋 Если не помогло - проверьте логи развертывания"
-    ],
-    
-    verificationSteps: [
-      "✅ KV binding настроен в Dashboard: " + (diagnostics.context.contextEnvKV ? "ДА" : "НЕТ"),
-      "✅ Context передается в API: " + (diagnostics.context.provided ? "ДА" : "НЕТ"), 
-      "✅ Context.env доступен: " + (diagnostics.context.hasEnv ? "ДА" : "НЕТ"),
-      "✅ NOTION_QUEUE_KV в context.env: " + (diagnostics.context.contextEnvKV ? "ДА" : "НЕТ"),
-      "✅ KV операции работают: " + (diagnostics.kvOperations.overall ? "ДА" : "НЕТ")
-    ],
-    
-    nextSteps: diagnostics.kvOperations.overall ? 
-      ["🎉 Все работает! Можете использовать KV для больших операций"] :
-      [
-        "🔄 Если только что изменили настройки - переразверните приложение",
-        "⏳ Подождите несколько минут после развертывания",
-        "🔍 Проверьте логи в Cloudflare Dashboard → Pages → Functions",
-        "📞 Если проблема остается - обратитесь к администратору Cloudflare"
-      ]
-  };
-
-  // 8. Определяем статус ответа
-  const statusCode = diagnostics.analysis.status === 'healthy' ? 200 : 503;
-
-  console.log(`[KV DIAGNOSTICS] 📊 Диагностика завершена. Статус: ${diagnostics.analysis.status}`);
+  console.log(`[KV DIAGNOSTICS] 📊 Диагностика завершена. Статус: ${isHealthy ? 'healthy' : 'issues'}`);
   
   return NextResponse.json(diagnostics, { status: statusCode });
 }
 
+// Расширенное тестирование KV операций
+async function performKVTests() {
+  const { env } = getRequestContext();
+  const kv = env.NOTION_QUEUE_KV;
+  
+  const testResults = {
+    basicOperations: false,
+    concurrentOperations: false,
+    largeValueHandling: false,
+    ttlSupport: false,
+    listOperations: false,
+    errors: []
+  };
+
+  try {
+    // Тест 1: Базовые операции (PUT, GET, DELETE)
+    console.log('[KV TEST] Тестируем базовые операции...');
+    const testKey = `diagnostic_test_${Date.now()}`;
+    const testValue = JSON.stringify({ test: true, timestamp: Date.now() });
+    
+    await kv.put(testKey, testValue);
+    const retrieved = await kv.get(testKey);
+    await kv.delete(testKey);
+    
+    testResults.basicOperations = retrieved === testValue;
+    console.log(`[KV TEST] Базовые операции: ${testResults.basicOperations ? '✅' : '❌'}`);
+
+    // Тест 2: TTL поддержка
+    console.log('[KV TEST] Тестируем TTL...');
+    const ttlKey = `ttl_test_${Date.now()}`;
+    await kv.put(ttlKey, 'ttl_test', { expirationTtl: 1 });
+    
+    // Проверяем что значение сразу доступно
+    const ttlValue = await kv.get(ttlKey);
+    testResults.ttlSupport = ttlValue === 'ttl_test';
+    console.log(`[KV TEST] TTL поддержка: ${testResults.ttlSupport ? '✅' : '❌'}`);
+
+    // Тест 3: Параллельные операции
+    console.log('[KV TEST] Тестируем параллельные операции...');
+    const concurrentPromises = Array.from({ length: 3 }, (_, i) => 
+      kv.put(`concurrent_${Date.now()}_${i}`, `value_${i}`)
+    );
+    
+    await Promise.all(concurrentPromises);
+    testResults.concurrentOperations = true;
+    console.log(`[KV TEST] Параллельные операции: ✅`);
+
+    // Тест 4: Большие значения
+    console.log('[KV TEST] Тестируем большие значения...');
+    const largeKey = `large_test_${Date.now()}`;
+    const largeValue = JSON.stringify({
+      data: Array.from({ length: 100 }, (_, i) => `item_${i}_${'x'.repeat(50)}`)
+    });
+    
+    await kv.put(largeKey, largeValue);
+    const largeRetrieved = await kv.get(largeKey);
+    testResults.largeValueHandling = largeRetrieved === largeValue;
+    await kv.delete(largeKey);
+    console.log(`[KV TEST] Большие значения: ${testResults.largeValueHandling ? '✅' : '❌'}`);
+
+    // Тест 5: List операции
+    console.log('[KV TEST] Тестируем list операции...');
+    try {
+      const listResult = await kv.list({ prefix: 'diagnostic_', limit: 1 });
+      testResults.listOperations = listResult && Array.isArray(listResult.keys);
+      console.log(`[KV TEST] List операции: ${testResults.listOperations ? '✅' : '❌'}`);
+    } catch (listError) {
+      testResults.listOperations = false;
+      testResults.errors.push(`List error: ${listError.message}`);
+      console.warn(`[KV TEST] List операции: ❌ - ${listError.message}`);
+    }
+
+    // Очистка тестовых данных
+    try {
+      await Promise.all([
+        kv.delete(ttlKey),
+        ...Array.from({ length: 3 }, (_, i) => kv.delete(`concurrent_${Date.now()}_${i}`))
+      ]);
+    } catch (cleanupError) {
+      console.warn('[KV TEST] Предупреждение при очистке:', cleanupError.message);
+    }
+
+  } catch (error) {
+    testResults.errors.push(error.message);
+    console.error('[KV TEST] Ошибка тестирования:', error.message);
+  }
+
+  return testResults;
+}
+
+// Анализ проблем и генерация рекомендаций
+function analyzeKVIssues(diagnostics) {
+  const issues = [];
+  const recommendations = [];
+  const status = diagnostics.kvConnection.connected ? 'healthy' : 'issues';
+
+  // Анализ проблем
+  if (!diagnostics.requestContext.available) {
+    issues.push('🚨 КРИТИЧНО: getRequestContext() недоступен');
+    recommendations.push('❗ Убедитесь что используете @cloudflare/next-on-pages');
+    recommendations.push('📝 Проверьте что все API routes имеют export const runtime = "edge"');
+  } 
+  else if (!diagnostics.requestContext.hasKVBinding) {
+    issues.push('🚨 КРИТИЧНО: KV binding NOTION_QUEUE_KV не найден');
+    recommendations.push('❗ Создайте KV namespace: npx wrangler kv namespace create "NOTION_QUEUE_KV"');
+    recommendations.push('📝 Добавьте binding в wrangler.toml');
+    recommendations.push('🔄 Переразверните приложение: npm run cf:deploy');
+  } 
+  else if (!diagnostics.kvConnection.connected) {
+    issues.push('⚠️ KV binding найден, но подключение неудачно');
+    recommendations.push('🔧 Проверьте что namespace ID корректный в wrangler.toml');
+    recommendations.push('⏳ Подождите несколько минут после развертывания');
+    recommendations.push('🔍 Проверьте логи развертывания на ошибки');
+  }
+
+  // Анализ тестов
+  if (diagnostics.kvConnection.testResults) {
+    const tests = diagnostics.kvConnection.testResults;
+    
+    if (!tests.basicOperations) {
+      issues.push('❌ Базовые KV операции не работают');
+      recommendations.push('🔧 Проверьте права доступа к KV namespace');
+    }
+    
+    if (!tests.ttlSupport) {
+      issues.push('⚠️ TTL поддержка работает некорректно');
+      recommendations.push('📋 TTL может не работать в preview режиме');
+    }
+    
+    if (!tests.concurrentOperations) {
+      issues.push('⚠️ Проблемы с параллельными операциями');
+      recommendations.push('🔄 Используйте sequential обработку как fallback');
+    }
+  }
+
+  // Общие рекомендации
+  if (issues.length === 0) {
+    recommendations.push('🎉 KV настроен и работает корректно!');
+    recommendations.push('🚀 Готово для обработки больших batch операций');
+  } else {
+    recommendations.push('📞 При сохраняющихся проблемах проверьте Cloudflare Dashboard');
+  }
+
+  return {
+    status,
+    issuesCount: issues.length,
+    issues,
+    recommendations,
+    severity: issues.some(i => i.includes('КРИТИЧНО')) ? 'critical' : 
+              issues.length > 0 ? 'warning' : 'none'
+  };
+}
+
 // POST endpoint для принудительного тестирования
-export async function POST(req, context) {
+export async function POST(req) {
   try {
     const body = await req.json();
     
     if (body.action === 'force_test') {
       console.log('[KV DIAGNOSTICS] 🧪 ПРИНУДИТЕЛЬНОЕ тестирование KV...');
       
-      // Принудительная переинициализация с context
-      const kvInitResult = initKV(context);
-      
-      const testResults = {
-        initWithContext: kvInitResult,
-        kvConnected: isKVConnected(),
-        contextProvided: !!context,
-        contextHasEnv: !!context?.env,
-        contextHasKV: !!context?.env?.NOTION_QUEUE_KV,
-        kvDiagnostics: getKVDiagnostics()
-      };
-      
-      if (!isKVConnected()) {
-        return NextResponse.json({
-          success: false,
-          message: "❌ KV недоступно для принудительного тестирования",
-          testResults,
-          recommendations: [
-            "🔄 Переразверните приложение: npm run cf:deploy",
-            "⏳ Подождите 2-3 минуты",
-            "🔍 Проверьте настройки KV binding в Dashboard"
-          ]
-        }, { status: 503 });
-      }
-      
-      // Интенсивное тестирование
       try {
-        const testData = Array.from({ length: 3 }, (_, i) => ({
-          key: `force_test_${Date.now()}_${i}`,
-          value: JSON.stringify({ test: `force_value_${i}`, timestamp: Date.now() })
-        }));
+        const connected = await isKVConnected();
         
-        // Запись
-        for (const { key, value } of testData) {
-          await context?.env?.NOTION_QUEUE_KV?.put(key, value, { expirationTtl: 60 }) ||
-                NOTION_QUEUE_KV?.put(key, value, { expirationTtl: 60 });
+        if (!connected) {
+          return NextResponse.json({
+            success: false,
+            message: "❌ KV недоступно для принудительного тестирования",
+            recommendations: [
+              "🔄 Переразверните приложение: npm run cf:deploy",
+              "⏳ Подождите 2-3 минуты",
+              "🔍 Проверьте настройки KV binding в wrangler.toml"
+            ]
+          }, { status: 503 });
         }
-        testResults.bulkPut = true;
         
-        // Чтение
-        for (const { key, value } of testData) {
-          const retrieved = await context?.env?.NOTION_QUEUE_KV?.get(key) ||
-                           NOTION_QUEUE_KV?.get(key);
-          if (retrieved !== value) {
-            throw new Error(`Mismatch for key ${key}: expected ${value}, got ${retrieved}`);
-          }
-        }
-        testResults.bulkGet = true;
+        // Интенсивное тестирование
+        const testResults = await performKVTests();
         
-        // Очистка
-        for (const { key } of testData) {
-          await context?.env?.NOTION_QUEUE_KV?.delete(key) ||
-                NOTION_QUEUE_KV?.delete(key);
-        }
-        testResults.bulkDelete = true;
-        
-        testResults.overall = true;
+        return NextResponse.json({
+          success: true,
+          message: "✅ Принудительное тестирование KV завершено успешно! 🎉",
+          testResults,
+          timestamp: new Date().toISOString()
+        });
         
       } catch (error) {
-        testResults.overall = false;
-        testResults.error = error.message;
-        testResults.errorStack = error.stack;
+        return NextResponse.json({
+          success: false,
+          message: "❌ Принудительное тестирование KV неудачно",
+          error: error.message,
+          timestamp: new Date().toISOString()
+        }, { status: 500 });
       }
+    }
+    
+    if (body.action === 'cleanup') {
+      console.log('[KV DIAGNOSTICS] 🧹 Очистка тестовых данных...');
       
-      return NextResponse.json({
-        success: testResults.overall,
-        message: testResults.overall ? 
-          "✅ Принудительное тестирование KV прошло успешно! 🎉" : 
-          "❌ Принудительное тестирование KV неудачно",
-        testResults,
-        timestamp: new Date().toISOString()
-      });
+      try {
+        const { env } = getRequestContext();
+        const kv = env.NOTION_QUEUE_KV;
+        
+        // Получаем список тестовых ключей
+        const testKeys = await kv.list({ prefix: 'diagnostic_' });
+        const concurrentKeys = await kv.list({ prefix: 'concurrent_' });
+        const ttlKeys = await kv.list({ prefix: 'ttl_test_' });
+        
+        const allTestKeys = [
+          ...testKeys.keys,
+          ...concurrentKeys.keys,
+          ...ttlKeys.keys
+        ];
+        
+        // Удаляем все тестовые ключи
+        const deletePromises = allTestKeys.map(key => kv.delete(key.name));
+        await Promise.all(deletePromises);
+        
+        return NextResponse.json({
+          success: true,
+          message: `🧹 Очищено ${allTestKeys.length} тестовых записей`,
+          cleaned: allTestKeys.length
+        });
+        
+      } catch (error) {
+        return NextResponse.json({
+          success: false,
+          message: "❌ Ошибка очистки тестовых данных",
+          error: error.message
+        }, { status: 500 });
+      }
     }
     
     return NextResponse.json(
-      { error: "❌ Неизвестное действие" },
+      { error: "❌ Неизвестное действие. Поддерживаются: force_test, cleanup" },
       { status: 400 }
     );
     
