@@ -535,18 +535,19 @@ export default function SkillsAssessmentForm({ params }) {
                   </div>
 
                   {/* Список навыков */}
-                  {!isCollapsed && (
-                    <div style={{ padding: '20px 0' }}>
-                      {(group.items || []).map((item) => (
-                        <ScoreRow
-                          key={item.pageId}
-                          item={item}
-                          onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
-                          hideComment={true}
-                        />
-                      ))}
-                    </div>
-                  )}
+					{!isCollapsed && (
+					  <div style={{ padding: '20px 0' }}>
+						{(group.items || []).map((item) => (
+						  <ScoreRow
+							key={item.pageId}
+							item={item}
+							currentScore={scoreData.get(item.pageId)?.value} // ИСПРАВЛЕНИЕ: передаем текущую оценку
+							onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
+							hideComment={true}
+						  />
+						))}
+					  </div>
+					)}
                 </div>
               );
             })}
