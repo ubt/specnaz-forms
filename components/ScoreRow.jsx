@@ -93,10 +93,28 @@ const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
 
 ScoreButton.displayName = 'ScoreButton';
 
-// Основной компонент строки оценки с улучшенным дизайном
-const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
-  const [val, setVal] = useState(() => clamp(item.current ?? 0));
+// Основной компонент строки оценки с исправленным состоянием
+const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) => {
+  // ИСПРАВЛЕНИЕ: Используем currentScore из родительского компонента, если оно есть
+  const [val, setVal] = useState(() => {
+    // Приоритет: currentScore > item.current > 0
+    if (currentScore !== undefined && currentScore !== null) {
+      return clamp(currentScore);
+    }
+    return clamp(item.current ?? 0);
+  });
+  
   const [isDirty, setIsDirty] = useState(false);
+  
+  // ИСПРАВЛЕНИЕ: Синхронизируем локальное состояние с родительским
+  useEffect(() => {
+    if (currentScore !== undefined && currentScore !== null) {
+      const newVal = clamp(currentScore);
+      if (val !== newVal) {
+        setVal(newVal);
+      }
+    }
+  }, [currentScore, val]);
   
   const debouncedChange = useDebounce(
     useCallback((newValue) => {
@@ -112,10 +130,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false }) => {
     setIsDirty(true);
     debouncedChange(clampedVal);
   }, [debouncedChange]);
-  
-  // Уведомление о начальных значениях убрано, чтобы прогресс оценок
-  // начинался с нуля и учитывал только измененные пользователем навыки
-  
   
   const scoreLabels = {
     0: "Нет опыта",
