@@ -414,7 +414,7 @@ export default function SkillsAssessmentForm({ params }) {
               fontSize: 16,
               lineHeight: 1.5
             }}>
-              Оцените уровень владения навыками по шкале от 0 до 5
+              Оцените уровень владения навыками по шкале от 0 до 5.
             </div>
             {stats?.reviewerName && (
               <div style={{
@@ -425,6 +425,14 @@ export default function SkillsAssessmentForm({ params }) {
                 Оценивающий: {stats.reviewerName}
               </div>
             )}
+			<div style={{
+              color: '#6c757d',
+              marginBottom: 16,
+              fontSize: 16,
+              lineHeight: 1.5
+            }}>
+              Форма пока что работает в тестовом режиме. При возникновении проблем, ошибок а также с предложениями по улучшению можно писать в telegram https://t.me/hanbeio 
+            </div>
           </div>
 
           {/* Прогресс-бар */}
