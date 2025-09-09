@@ -13,13 +13,13 @@
   "dependencies": {
     "@notionhq/client": "^2.2.15",
     "jose": "^5.2.0",
-    "next": "^14.2.5",
+    "next": "^14.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "^1.13.5",
+    "@cloudflare/next-on-pages": "^1.13.6",
     "wrangler": "^3.78.0"
   }
 }
