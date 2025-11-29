@@ -110,9 +110,11 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
   useEffect(() => {
     if (currentScore !== undefined && currentScore !== null) {
       const newVal = clamp(currentScore);
-      setVal(prev => (prev !== newVal ? newVal : prev));
+      if (val !== newVal) {
+        setVal(newVal);
+      }
     }
-  }, [currentScore]);
+  }, [currentScore, val]);
   
   const debouncedChange = useDebounce(
     useCallback((newValue) => {
