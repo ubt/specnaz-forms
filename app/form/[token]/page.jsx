@@ -242,6 +242,10 @@ export default function SkillsAssessmentForm({ params }) {
 
   const ratedSkills = scoreData.size;
 
+  const readinessPercent = useMemo(() => {
+    return totalSkills ? Math.round((ratedSkills / totalSkills) * 100) : 0;
+  }, [ratedSkills, totalSkills]);
+
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const toggleGroup = useCallback((key) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
@@ -328,10 +332,7 @@ export default function SkillsAssessmentForm({ params }) {
 
       } else if (result.mode === 'direct_processing' || result.mode === 'direct') {
         // Прямая обработка завершена
-        const successRate = result.stats.totalOperations > 0 ?
-          (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
-
-			setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
+        setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
 
         // Показываем детали если есть ошибки
         if (result.stats.failed > 0) {
@@ -571,12 +572,12 @@ export default function SkillsAssessmentForm({ params }) {
                 gap: 16
               }}>
                 <div>
-                  <div style={{ 
-                    fontWeight: 600, 
+                  <div style={{
+                    fontWeight: 600,
                     color: '#495057',
                     marginBottom: 4
                   }}>
-                    Готовность к отправке: {Math.round((ratedSkills / totalSkills) * 100) || 0}%
+                    {`Готовность к отправке: ${readinessPercent}%`}
                   </div>
                   <div style={{ color: '#6c757d', fontSize: 14 }}>
                     {ratedSkills === totalSkills ? 
