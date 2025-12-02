@@ -3,11 +3,12 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 import { verifyReviewToken } from "@/lib/token";
-import { 
-  NotionBatchProcessor, 
-  addBatchToKVQueue, 
-  isKVConnected, 
-  initKV 
+import { BatchSubmitRequest } from "@/lib/schema";
+import {
+  NotionBatchProcessor,
+  addBatchToKVQueue,
+  isKVConnected,
+  initKV
 } from "@/lib/kv-queue";
 import { notion } from "@/lib/notion";
 
@@ -78,43 +79,21 @@ export async function POST(req) {
       );
     }
 
-    // 3. Валидация операций
-    const { operations = [], options = {} } = body;
+    // 3. Валидация операций с использованием Zod
+    const validationResult = BatchSubmitRequest.safeParse(body);
 
-    if (!Array.isArray(operations) || operations.length === 0) {
+    if (!validationResult.success) {
+      console.error('[BATCH SUBMIT] ❌ Ошибка валидации:', validationResult.error.issues);
       return NextResponse.json(
-        { 
-          error: "Не предоставлены операции для обработки",
-          expected: "Массив операций с полями: pageId, properties"
+        {
+          error: "Некорректные данные запроса",
+          details: validationResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join("; ")
         },
         { status: 400 }
       );
     }
 
-    // Валидация каждой операции
-    for (let i = 0; i < operations.length; i++) {
-      const op = operations[i];
-      if (!op.pageId || typeof op.pageId !== 'string') {
-        return NextResponse.json(
-          { 
-            error: `Операция ${i + 1}: некорректный pageId`,
-            details: "pageId должен быть непустой строкой"
-          },
-          { status: 400 }
-        );
-      }
-      
-      if (!op.properties || typeof op.properties !== 'object') {
-        return NextResponse.json(
-          { 
-            error: `Операция ${i + 1}: некорректные properties`,
-            details: "properties должен быть объектом"
-          },
-          { status: 400 }
-        );
-      }
-    }
-
+    const { operations, options = {} } = validationResult.data;
     console.log(`[BATCH SUBMIT] ✅ Валидация пройдена: ${operations.length} операций`);
 
     // 4. Определение режима обработки
