@@ -1,24 +1,7 @@
 "use client";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback } from "react";
 
 const clamp = (n) => Math.max(0, Math.min(5, Number.isFinite(n) ? Math.round(n) : 0));
-
-// Оптимизированный debounce hook
-function useDebounce(callback, delay = 200) {
-  const timeoutRef = useRef();
-  const callbackRef = useRef(callback);
-  
-  useEffect(() => {
-    callbackRef.current = callback;
-  });
-  
-  return useCallback((...args) => {
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      callbackRef.current(...args);
-    }, delay);
-  }, [delay]);
-}
 
 // Компонент кнопки оценки
 const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
@@ -93,43 +76,16 @@ const ScoreButton = memo(({ value, currentValue, onSelect, label }) => {
 
 ScoreButton.displayName = 'ScoreButton';
 
-// Основной компонент строки оценки с исправленным состоянием
+// Основной компонент строки оценки (упрощенный)
 const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) => {
-  // ИСПРАВЛЕНИЕ: Используем currentScore из родительского компонента, если оно есть
-  const [val, setVal] = useState(() => {
-    // Приоритет: currentScore > item.current > 0
-    if (currentScore !== undefined && currentScore !== null) {
-      return clamp(currentScore);
-    }
-    return clamp(item.current ?? 0);
-  });
-  
-  const [isDirty, setIsDirty] = useState(false);
-  
-  // ИСПРАВЛЕНИЕ: Синхронизируем локальное состояние с родительским
-  useEffect(() => {
-    if (currentScore !== undefined && currentScore !== null) {
-      const newVal = clamp(currentScore);
-      if (val !== newVal) {
-        setVal(newVal);
-      }
-    }
-  }, [currentScore, val]);
-  
-  const debouncedChange = useDebounce(
-    useCallback((newValue) => {
-      onChange({ value: newValue });
-      setIsDirty(false);
-    }, [onChange]),
-    150
-  );
+  // Единственный источник истины - currentScore из родителя
+  const value = currentScore !== undefined && currentScore !== null 
+    ? clamp(currentScore) 
+    : clamp(item.current ?? 0);
   
   const handleValueChange = useCallback((newVal) => {
-    const clampedVal = clamp(newVal);
-    setVal(clampedVal);
-    setIsDirty(true);
-    debouncedChange(clampedVal);
-  }, [debouncedChange]);
+    onChange({ value: clamp(newVal) });
+  }, [onChange]);
   
   const scoreLabels = {
     0: "Нет опыта",
@@ -144,7 +100,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
     <div style={{
       padding: '5px 24px',
       borderBottom: '1px solid #f1f3f4',
-      backgroundColor: isDirty ? '#f8f9fa' : 'white',
+      backgroundColor: 'white',
       transition: 'background-color 0.2s ease'
     }}>
       {/* Название навыка */}
@@ -180,7 +136,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
           )}
 
           {/* Текущее значение */}
-          {val !== null && (
+          {value !== null && (
             <div style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -193,7 +149,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
               color: '#0066cc'
             }}>
               <span>Текущая оценка:</span>
-              <span style={{ fontWeight: 600 }}>{val} - {scoreLabels[val]}</span>
+              <span style={{ fontWeight: 600 }}>{value} - {scoreLabels[value]}</span>
             </div>
           )}
         </div>
@@ -218,7 +174,7 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
               <ScoreButton
                 key={score}
                 value={score}
-                currentValue={val}
+                currentValue={value}
                 onSelect={handleValueChange}
                 label={`${score} - ${scoreLabels[score]}`}
               />
@@ -237,14 +193,13 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
           }}>
             {Object.values(scoreLabels).map((label, index) => (
               <div key={index} style={{
-                fontWeight: val === index ? 600 : 400,
-                color: val === index ? '#495057' : '#6c757d'
+                fontWeight: value === index ? 600 : 400,
+                color: value === index ? '#495057' : '#6c757d'
               }}>
                 {label}
               </div>
             ))}
           </div>
-
         </div>
       </div>
     </div>
