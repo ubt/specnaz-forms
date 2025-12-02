@@ -119,8 +119,6 @@ function useSkillsData(token) {
     loading: true,
     error: null,
     scoreData: new Map(),
-    initialScores: new Map(),
-    changedScores: new Map(),
     stats: null,
     loadTime: 0
   });
@@ -200,7 +198,7 @@ function useSkillsData(token) {
         loadTime: (performance.now() - start) / 1000,
         scoreData: initialScoreData
       }));
-
+      
     } catch (error) {
       console.error('[SKILLS] Ошибка загрузки навыков:', error);
       setState(prev => ({ 
@@ -216,20 +214,9 @@ function useSkillsData(token) {
     setState(prev => {
       const newScoreData = new Map(prev.scoreData);
       newScoreData.set(pageId, { value, role });
-
-      const newChangedScores = new Map(prev.changedScores);
-      const initialValue = prev.initialScores.get(pageId)?.value;
-
-      if (value === initialValue) {
-        newChangedScores.delete(pageId);
-      } else {
-        newChangedScores.set(pageId, { value, role });
-      }
-
       return {
         ...prev,
-        scoreData: newScoreData,
-        changedScores: newChangedScores
+        scoreData: newScoreData
       };
     });
   }, []);
@@ -257,7 +244,6 @@ export default function SkillsAssessmentForm({ params }) {
     loading,
     error,
     scoreData,
-    changedScores,
     stats,
     loadTime,
     updateSkillScore,
@@ -279,8 +265,8 @@ export default function SkillsAssessmentForm({ params }) {
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
-    if (changedScores.size === 0) {
-      setSubmitMessage('❌ Нет изменений для отправки');
+    if (scoreData.size === 0) {
+      setSubmitMessage('❌ Необходимо оценить хотя бы один навык');
       return;
     }
 
@@ -289,7 +275,7 @@ export default function SkillsAssessmentForm({ params }) {
     
     try {
       // Преобразуем scoreData в формат операций для batch API
-      const operations = Array.from(changedScores.entries()).map(([pageId, scoreInfo]) => {
+      const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
         const fieldMapping = {
           'self': 'Self_score',
           'p1_peer': 'P1_score', 
@@ -400,7 +386,7 @@ export default function SkillsAssessmentForm({ params }) {
     } finally {
       setSubmitting(false);
     }
-  }, [changedScores, token]);
+  }, [scoreData, token]);
 
   return (
     <div style={{ 
