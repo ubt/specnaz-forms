@@ -335,37 +335,26 @@ export default function SkillsAssessmentForm({ params }) {
 
       const result = await response.json();
       console.log('[SUBMIT] Ответ от batch API:', result);
-      
-      if (result.mode === 'kv_queue') {
-        // KV очереди используются
-        setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
 
-      } else if (result.mode === 'direct_processing' || result.mode === 'direct') {
-        // Прямая обработка завершена
-        const successRate = result.stats.totalOperations > 0 ?
-          (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
+      // Простая обработка результата без проверки режима
+      const totalOps = result.totalOperations || operations.length;
+      setSubmitMessage(`✅ ${totalOps} оценок отправлено. Спасибо!`);
 
-			setSubmitMessage(`${result.totalOperations} оценок отправлено. Спасибо!`);
+      // Показываем детали если есть ошибки (только для синхронной обработки)
+      if (result.stats?.failed > 0) {
+        const errorDetails = result.results
+          .filter(r => r.status === 'error')
+          .slice(0, 3)
+          .map(r => r.error || 'Неизвестная ошибка')
+          .join('; ');
 
-        // Показываем детали если есть ошибки
-        if (result.stats.failed > 0) {
-          const errorDetails = result.results
-            .filter(r => r.status === 'error')
-            .slice(0, 3)
-            .map(r => r.error || 'Неизвестная ошибка')
-            .join('; ');
-
-          setTimeout(() => {
-            setSubmitMessage(prev =>
-              prev + ` Ошибки: ${errorDetails}${result.stats.failed > 3 ? '...' : ''}`
-            );
-          }, 2000);
-        }
-      } else {
-        // Неизвестный режим
-        setSubmitMessage(`✅ Операции отправлены в режиме: ${result.mode}. Проверьте результаты.`);
+        setTimeout(() => {
+          setSubmitMessage(prev =>
+            prev + ` ⚠️ Некоторые ошибки: ${errorDetails}${result.stats.failed > 3 ? '...' : ''}`
+          );
+        }, 2000);
       }
-      
+
     } catch (error) {
       console.error('[SUBMIT] Ошибка отправки:', error);
       
