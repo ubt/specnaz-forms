@@ -634,7 +634,7 @@ export default function SkillsAssessmentForm({ params }) {
                       </>
                     ) : (
                       <>
-                        🚀 Отправить оценку
+                        Отправить оценку
                       </>
                     )}
                   </button>
