@@ -134,24 +134,6 @@ const ScoreRow = memo(({ item, onChange, hideComment = false, currentScore }) =>
               {item.description}
             </div>
           )}
-
-          {/* Текущее значение */}
-          {value !== null && (
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 12px',
-              backgroundColor: '#e7f3ff',
-              borderRadius: 16,
-              fontSize: 13,
-              fontWeight: 500,
-              color: '#0066cc'
-            }}>
-              <span>Текущая оценка:</span>
-              <span style={{ fontWeight: 600 }}>{value} - {scoreLabels[value]}</span>
-            </div>
-          )}
         </div>
 
         {/* Шкала оценки */}
