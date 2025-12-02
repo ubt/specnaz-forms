@@ -205,7 +205,6 @@ export async function POST(req) {
         
         return NextResponse.json({
           success: true,
-          mode: 'kv_queue',
           batchId: batchId,
           jobIds: jobIds,
           totalOperations: operations.length,
@@ -325,9 +324,9 @@ async function handleDirectProcessing(operations, options, reason = 'direct') {
 
     return NextResponse.json({
       success: true,
-      mode: reason === 'kv_fallback' ? 'direct_processing_fallback' : 'direct_processing',
       results: result.results,
       stats: result.stats,
+      totalOperations: result.stats.totalOperations,
       message: message,
       completed: true,
       timestamp: new Date().toISOString(),
@@ -341,7 +340,6 @@ async function handleDirectProcessing(operations, options, reason = 'direct') {
       {
         error: "❌ Ошибка при прямой обработке операций",
         details: directError.message,
-        mode: 'direct_processing_failed',
         suggestion: "Попробуйте уменьшить количество операций или повторите позже"
       },
       { status: 500 }
