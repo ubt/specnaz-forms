@@ -29,28 +29,28 @@ export default function OptimizedAdmin() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // Валидация формы
+  // Валидация формы (синхронизирована с backend Zod схемой)
   const validation = useMemo(() => {
     const errors = {};
-    
+
     if (!teamName.trim()) {
       errors.teamName = "Название команды обязательно";
     } else if (teamName.trim().length < 2) {
-      errors.teamName = "Слишком короткое название";
-    } else if (teamName.trim().length > 15) {
-      errors.teamName = "Слишком длинное название";
+      errors.teamName = "Название команды слишком короткое (минимум 2 символа)";
+    } else if (teamName.trim().length > 100) {
+      errors.teamName = "Название команды слишком длинное (максимум 100 символов)";
     }
-    
+
     if (expDays < 1 || expDays > 365) {
       errors.expDays = "Срок должен быть от 1 до 365 дней";
     }
-    
+
     if (!adminKey.trim()) {
       errors.adminKey = "Admin key обязателен";
     } else if (adminKey.trim().length < 4) {
       errors.adminKey = "Admin key слишком короткий";
     }
-    
+
     return {
       errors,
       isValid: Object.keys(errors).length === 0
@@ -231,7 +231,7 @@ export default function OptimizedAdmin() {
           onChange={e => setTeamName(e.target.value)}
           placeholder="Введите название команды"
           style={errors.teamName ? errorInputStyle : inputStyle}
-          maxLength={50}
+          maxLength={100}
         />
         {errors.teamName && (
           <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>

@@ -1,16 +1,11 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { AdminSignRequest } from "@/lib/schema";
 import { signReviewToken } from "@/lib/token";
 import { findEmployeesByTeam, listReviewersForEmployees, PerformanceTracker } from "@/lib/notion";
-
-const ReqSchema = z.object({
-  teamName: z.string().min(1).max(100),
-  expDays: z.number().int().min(1).max(365).default(14),
-  adminKey: z.string().optional(),
-  cycleId: z.string().optional(),
-});
+import { checkAdminRateLimit } from "@/lib/adminRateLimit";
+import { logger, sanitizeForLog } from "@/lib/logger";
 
 function t(s) { return (s || "").trim(); }
 
@@ -39,14 +34,21 @@ function validateEnvironment() {
 export async function POST(req) {
   const operation = 'generate-review-links';
   PerformanceTracker.start(operation);
-  
+
   let body = {};
-  
+
   try {
+    // Rate limiting check
+    const rateLimitResult = checkAdminRateLimit(req);
+    if (!rateLimitResult.allowed) {
+      logger.warn('[ADMIN] Rate limit exceeded for request');
+      return rateLimitResult.response;
+    }
+
     // Проверяем переменные окружения в первую очередь
-    console.log('[ENV CHECK] Validating environment variables...');
+    logger.debug('[ENV CHECK] Validating environment variables...');
     const env = validateEnvironment();
-    console.log('[ENV CHECK] All required environment variables are present');
+    logger.debug('[ENV CHECK] All required environment variables are present');
     
     // Парсинг заголовков и тела запроса
     const hdrKey = t(req.headers.get("x-admin-key"));
@@ -62,20 +64,20 @@ export async function POST(req) {
     }
     
     console.log('[REQUEST] Parsing request body...', { teamName: body.teamName, expDays: body.expDays });
-    
-    const parsed = ReqSchema.safeParse(body);
+
+    const parsed = AdminSignRequest.safeParse(body);
     if (!parsed.success) {
       console.error('[VALIDATION ERROR]', parsed.error.issues);
       return NextResponse.json(
-        { 
+        {
           error: "Некорректные параметры",
           details: parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(", ")
-        }, 
+        },
         { status: 400 }
       );
     }
-    
-    const { teamName, expDays, cycleId } = parsed.data;
+
+    const { teamName, expDays } = parsed.data;
     console.log('[REQUEST] Validated parameters:', { teamName, expDays });
 
     // Проверка авторизации

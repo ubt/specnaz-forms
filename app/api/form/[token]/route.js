@@ -346,7 +346,7 @@ export async function GET(req, { params }) {
     
     console.log('[FORM GET] ===== Запрос завершён успешно =====');
     return NextResponse.json(response);
-    
+
   } catch (error) {
     console.error('[FORM GET КРИТИЧЕСКАЯ ОШИБКА]', {
       error: error.message,
@@ -355,12 +355,12 @@ export async function GET(req, { params }) {
       token: params?.token?.substring(0, 10) + '...',
       userAgent: req.headers.get('user-agent')
     });
-    
+
     // Специальная обработка известных ошибок
     let errorMessage = "Внутренняя ошибка сервера";
     let statusCode = 500;
     let details = undefined;
-    
+
     if (error.message?.includes('Отсутствуют обязательные переменные окружения')) {
       errorMessage = "Конфигурация сервера неполная";
       details = "Проверьте переменные окружения в Cloudflare Pages";
@@ -375,204 +375,29 @@ export async function GET(req, { params }) {
       statusCode = 429;
     } else if (error instanceof ReferenceError || error instanceof TypeError) {
       console.error('[FORM GET] Обнаружена ошибка JavaScript:', error.message);
-      errorMessage = process.env.NODE_ENV === 'development' 
-        ? `Ошибка кода: ${error.message}` 
+      errorMessage = process.env.NODE_ENV === 'development'
+        ? `Ошибка кода: ${error.message}`
         : "Внутренняя ошибка сервера";
       details = process.env.NODE_ENV === 'development' ? {
         type: error.constructor.name,
         originalError: error.message
       } : undefined;
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: errorMessage,
         details,
         timestamp: new Date().toISOString(),
-        ...(process.env.NODE_ENV === 'development' && { 
+        ...(process.env.NODE_ENV === 'development' && {
           debug: {
             originalError: error.message,
             stack: error.stack.split('\n').slice(0, 5).join('\n'),
             type: error.constructor.name
           }
         })
-      }, 
+      },
       { status: statusCode }
     );
   }
 }
-
-// POST - сохранение оценок (ИСПРАВЛЕНО)
-export async function POST(req, { params }) {
-  try {
-    console.log('[FORM POST] Начало обработки запроса сохранения оценок');
-    
-    const { token } = params;
-    
-    // Импорт модулей
-    let tokenModule, notionModule;
-
-    try {
-      tokenModule = await importTokenModule();
-      notionModule = await importNotionModule();
-    } catch (importError) {
-      console.error('[FORM POST] Ошибка импорта модулей:', importError.message);
-      return NextResponse.json(
-        { 
-          error: "Ошибка загрузки модулей сервера",
-          details: process.env.NODE_ENV === 'development' ? importError.message : undefined
-        }, 
-        { status: 500 }
-      );
-    }
-    
-    const { verifyReviewToken } = tokenModule;
-    const { updateScore, ROLE_TO_FIELD, PerformanceTracker } = notionModule;
-    
-    // Проверка токена
-    let payload;
-    try {
-      payload = await verifyReviewToken(token);
-      console.log('[FORM POST] Токен верифицирован:', { 
-        reviewerUserId: payload.reviewerUserId, 
-        role: payload.role 
-      });
-    } catch (error) {
-      console.error('[FORM POST] Ошибка верификации токена:', error.message);
-      return NextResponse.json(
-        { error: "Недействительный или истёкший токен" }, 
-        { status: 401 }
-      );
-    }
-    
-    const { reviewerUserId, role } = payload;
-    
-    // Парсинг тела запроса
-    let body;
-    try {
-      body = await req.json();
-      console.log('[FORM POST] Получены данные:', {
-        itemsCount: body.items?.length || 0
-      });
-    } catch (error) {
-      console.error('[FORM POST] Ошибка парсинга JSON:', error.message);
-      return NextResponse.json(
-        { error: "Некорректный JSON" }, 
-        { status: 400 }
-      );
-    }
-    
-    // Простая валидация
-    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
-      return NextResponse.json(
-        { error: "Необходимо предоставить массив элементов для обновления" }, 
-        { status: 400 }
-      );
-    }
-    
-    // Валидируем каждый элемент
-    for (const [index, item] of body.items.entries()) {
-      if (!item.pageId || typeof item.value !== 'number' || item.value < 0 || item.value > 5) {
-        return NextResponse.json(
-          {
-            error: `Некорректный элемент ${index + 1}: требуется pageId и value от 0 до 5`,
-            receivedItem: item
-          },
-          { status: 400 }
-        );
-      }
-      if (item.role && !ROLE_TO_FIELD[item.role]) {
-        return NextResponse.json(
-          {
-            error: `Некорректная роль в элементе ${index + 1}`,
-            receivedItem: item
-          },
-          { status: 400 }
-        );
-      }
-    }
-    
-    const items = body.items;
-
-    console.log(`[FORM POST] Роль из токена: ${role}`);
-    
-    // Batch обновление с параллельной отправкой
-    PerformanceTracker?.start('batch-update');
-    const results = [];
-    const BATCH_SIZE = 3;
-
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      const batch = items.slice(i, i + BATCH_SIZE);
-
-      const batchPromises = batch.map((item, idx) => {
-        const itemRole = item.role && ROLE_TO_FIELD[item.role] ? item.role : role;
-        const field = ROLE_TO_FIELD[itemRole] || ROLE_TO_FIELD.peer;
-
-        console.log(
-          `[FORM POST] Добавление ${i + idx + 1}/${items.length}: ${item.pageId} = ${item.value} -> ${field}`
-        );
-
-        return updateScore(item.pageId, field, item.value).then(() => ({
-          pageId: item.pageId,
-          field,
-          value: item.value,
-        }));
-      });
-
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-    }
-
-    const duration = PerformanceTracker?.end('batch-update') || 0;
-
-    console.log(`[FORM POST] Обновлено ${results.length} элементов за ${duration}ms`);
-
-    const response = {
-      ok: true,
-      queued: results.length,
-      reviewerRole: role,
-      duration,
-      message: `Обновлено ${results.length} оценок`
-    };
-
-    return NextResponse.json(response);
-    
-  } catch (error) {
-    console.error('[FORM POST КРИТИЧЕСКАЯ ОШИБКА]', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString(),
-      token: params?.token?.substring(0, 10) + '...'
-    });
-    
-    if (error.status === 401 || error.status === 403) {
-      return NextResponse.json(
-        { 
-          error: "Нет прав для обновления записей",
-          details: "Проверьте права доступа к базе данных Notion"
-        }, 
-        { status: 403 }
-      );
-    }
-    
-    if (error.status === 429) {
-      return NextResponse.json(
-        { error: "Слишком много запросов. Попробуйте через несколько секунд." }, 
-        { status: 429 }
-      );
-    }
-    
-    return NextResponse.json(
-      { 
-        error: process.env.NODE_ENV === 'development' 
-          ? `Ошибка обновления: ${error.message}` 
-          : "Ошибка сохранения данных",
-        details: process.env.NODE_ENV === 'development' ? {
-          originalError: error.message,
-          stack: error.stack.split('\n').slice(0, 3).join('\n')
-        } : undefined
-      }, 
-      { status: 500 }
-    );
-  }
-}  
