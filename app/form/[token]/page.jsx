@@ -174,15 +174,29 @@ function useSkillsData(token) {
       }
 
       const skillGroups = Object.values(grouped);
+
+      // Заполняем карту оценок существующими значениями из Notion
+      const initialScoreData = new Map();
+      skillGroups.forEach(group => {
+        group.items?.forEach(item => {
+          if (item.current !== null && item.current !== undefined) {
+            initialScoreData.set(item.pageId, {
+              value: item.current,
+              role: group.role
+            });
+          }
+        });
+      });
       console.log(`[SKILLS] Загружено ${skillGroups.length} групп навыков`);
-      
+
       setState(prev => ({
         ...prev,
         skillGroups,
         loading: false,
         error: null,
         stats: result.stats,
-        loadTime: (performance.now() - start) / 1000
+        loadTime: (performance.now() - start) / 1000,
+        scoreData: initialScoreData
       }));
       
     } catch (error) {
