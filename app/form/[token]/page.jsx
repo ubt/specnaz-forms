@@ -119,6 +119,8 @@ function useSkillsData(token) {
     loading: true,
     error: null,
     scoreData: new Map(),
+    initialScoreData: new Map(),
+    changedSkills: new Set(),
     stats: null,
     loadTime: 0
   });
@@ -196,9 +198,11 @@ function useSkillsData(token) {
         error: null,
         stats: result.stats,
         loadTime: (performance.now() - start) / 1000,
-        scoreData: initialScoreData
+        scoreData: initialScoreData,
+        initialScoreData,
+        changedSkills: new Set()
       }));
-      
+
     } catch (error) {
       console.error('[SKILLS] Ошибка загрузки навыков:', error);
       setState(prev => ({ 
@@ -214,9 +218,20 @@ function useSkillsData(token) {
     setState(prev => {
       const newScoreData = new Map(prev.scoreData);
       newScoreData.set(pageId, { value, role });
+
+      const newChangedSkills = new Set(prev.changedSkills);
+      const initialValue = prev.initialScoreData.get(pageId)?.value;
+
+      if (initialValue === value) {
+        newChangedSkills.delete(pageId);
+      } else {
+        newChangedSkills.add(pageId);
+      }
+
       return {
         ...prev,
-        scoreData: newScoreData
+        scoreData: newScoreData,
+        changedSkills: newChangedSkills
       };
     });
   }, []);
@@ -244,6 +259,7 @@ export default function SkillsAssessmentForm({ params }) {
     loading,
     error,
     scoreData,
+    changedSkills,
     stats,
     loadTime,
     updateSkillScore,
@@ -264,9 +280,9 @@ export default function SkillsAssessmentForm({ params }) {
 // ИСПРАВЛЕННАЯ функция для обработки отправки формы с лучшей обработкой KV
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
-    if (scoreData.size === 0) {
-      setSubmitMessage('❌ Необходимо оценить хотя бы один навык');
+
+    if (changedSkills.size === 0) {
+      setSubmitMessage('❌ Нет изменений для отправки');
       return;
     }
 
@@ -275,24 +291,26 @@ export default function SkillsAssessmentForm({ params }) {
     
     try {
       // Преобразуем scoreData в формат операций для batch API
-      const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
-        const fieldMapping = {
-          'self': 'Self_score',
-          'p1_peer': 'P1_score', 
-          'p2_peer': 'P2_score',
-          'manager': 'Manager_score',
-          'peer': 'P1_score' // fallback
-        };
-        
-        const field = fieldMapping[scoreInfo.role] || fieldMapping.peer;
-        
-        return {
-          pageId: pageId,
-          properties: {
-            [field]: { number: scoreInfo.value }
-          }
-        };
-      });
+      const operations = Array.from(scoreData.entries())
+        .filter(([pageId]) => changedSkills.has(pageId))
+        .map(([pageId, scoreInfo]) => {
+          const fieldMapping = {
+            'self': 'Self_score',
+            'p1_peer': 'P1_score',
+            'p2_peer': 'P2_score',
+            'manager': 'Manager_score',
+            'peer': 'P1_score' // fallback
+          };
+
+          const field = fieldMapping[scoreInfo.role] || fieldMapping.peer;
+
+          return {
+            pageId: pageId,
+            properties: {
+              [field]: { number: scoreInfo.value }
+            }
+          };
+        });
 
       console.log(`[SUBMIT] Отправляем ${operations.length} операций через batch API`);
       
@@ -386,7 +404,7 @@ export default function SkillsAssessmentForm({ params }) {
     } finally {
       setSubmitting(false);
     }
-  }, [scoreData, token]);
+  }, [changedSkills, scoreData, token]);
 
   return (
     <div style={{ 
