@@ -198,9 +198,7 @@ function useSkillsData(token) {
         error: null,
         stats: result.stats,
         loadTime: (performance.now() - start) / 1000,
-        scoreData: initialScoreData,
-        initialScores: initialScoreData,
-        changedScores: new Map()
+        scoreData: initialScoreData
       }));
 
     } catch (error) {
@@ -455,7 +453,7 @@ export default function SkillsAssessmentForm({ params }) {
             }}>
               Оцените уровень владения навыками по шкале от 0 до 5.
           <br/>
-              Форма работает в тестовом режиме. При возникновении проблем, ошибок а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
+              Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
             </div>
           </div>
 
@@ -650,7 +648,7 @@ export default function SkillsAssessmentForm({ params }) {
                       </>
                     ) : (
                       <>
-                        🚀 Отправить оценку
+                        Отправить оценку
                       </>
                     )}
                   </button>
