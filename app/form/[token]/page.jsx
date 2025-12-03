@@ -138,7 +138,8 @@ function useSkillsData(token) {
               skillGroups: data.skillGroups || [],
               loading: false,
               error: null,
-              scoreData: new Map(data.scores || []),
+              scoreData: new Map(data.scores || []), // Изменённые оценки
+              initialScoreData: new Map(data.initialScores || []), // Исходные оценки
               stats: data.stats,
               loadTime: 0,
               fromCache: true,
@@ -154,7 +155,8 @@ function useSkillsData(token) {
       skillGroups: [],
       loading: true,
       error: null,
-      scoreData: new Map(),
+      scoreData: new Map(), // Только изменённые оценки
+      initialScoreData: new Map(), // Исходные оценки из Notion
       stats: null,
       loadTime: 0,
       loadingStage: 0,
@@ -229,7 +231,7 @@ function useSkillsData(token) {
 
       const skillGroups = Object.values(grouped);
 
-      // Заполняем начальные оценки
+      // Заполняем исходные оценки из Notion (для сравнения)
       const initialScoreData = new Map();
       skillGroups.forEach(group => {
         group.items?.forEach(item => {
@@ -239,9 +241,12 @@ function useSkillsData(token) {
         });
       });
 
+      // scoreData начинается пустым - будет заполняться только при изменении пользователем
+      const emptyScoreData = new Map();
+
       // Вычисляем время загрузки
-      const loadTime = loadStartRef.current 
-        ? (performance.now() - loadStartRef.current) / 1000 
+      const loadTime = loadStartRef.current
+        ? (performance.now() - loadStartRef.current) / 1000
         : 0;
 
       // Сохраняем в кэш
@@ -250,7 +255,8 @@ function useSkillsData(token) {
           const cacheData = {
             data: {
               skillGroups,
-              scores: Array.from(initialScoreData.entries()),
+              scores: Array.from(emptyScoreData.entries()), // Пустой при загрузке
+              initialScores: Array.from(initialScoreData.entries()), // Исходные значения
               stats: result.stats
             },
             timestamp: Date.now()
@@ -267,7 +273,8 @@ function useSkillsData(token) {
         error: null,
         stats: result.stats,
         loadTime,
-        scoreData: initialScoreData,
+        scoreData: emptyScoreData, // Пустой - только изменённые оценки
+        initialScoreData: initialScoreData, // Исходные оценки
         fromCache: false,
         loadingStage: 3
       });
@@ -293,7 +300,18 @@ function useSkillsData(token) {
   const updateSkillScore = useCallback((pageId, role, value) => {
     setState(prev => {
       const newScoreData = new Map(prev.scoreData);
-      newScoreData.set(pageId, { value, role });
+      const initialScore = prev.initialScoreData.get(pageId);
+
+      // Если значение отличается от исходного - добавляем в scoreData
+      // Если совпадает с исходным - удаляем из scoreData (не нужно отправлять)
+      if (initialScore && initialScore.value === value) {
+        // Оценка вернулась к исходному значению - удаляем из изменений
+        newScoreData.delete(pageId);
+      } else {
+        // Оценка изменилась - добавляем/обновляем
+        newScoreData.set(pageId, { value, role });
+      }
+
       return { ...prev, scoreData: newScoreData };
     });
   }, []);
@@ -307,7 +325,8 @@ function useSkillsData(token) {
   return {
     ...state,
     updateSkillScore,
-    refetch: () => fetchSkills(true)
+    refetch: () => fetchSkills(true),
+    initialScoreData: state.initialScoreData // Возвращаем для использования в компоненте
   };
 }
 
@@ -322,6 +341,7 @@ export default function SkillsAssessmentForm({ params }) {
     loading,
     error,
     scoreData,
+    initialScoreData,
     stats,
     loadTime,
     loadingStage,
@@ -334,7 +354,17 @@ export default function SkillsAssessmentForm({ params }) {
     return skillGroups.reduce((sum, group) => sum + (group.items?.length || 0), 0);
   }, [skillGroups]);
 
-  const ratedSkills = scoreData.size;
+  // Подсчет оцененных навыков: исходные оценки + новые изменения (которых не было в исходных)
+  const ratedSkills = useMemo(() => {
+    const allRatedIds = new Set(initialScoreData.keys());
+    // Добавляем новые оценки, которых не было в исходных
+    scoreData.forEach((_, pageId) => {
+      if (!initialScoreData.has(pageId)) {
+        allRatedIds.add(pageId);
+      }
+    });
+    return allRatedIds.size;
+  }, [initialScoreData, scoreData]);
 
   const toggleGroup = useCallback((key) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
@@ -343,35 +373,36 @@ export default function SkillsAssessmentForm({ params }) {
   // Обработка отправки формы
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
+
+    // scoreData теперь содержит только ИЗМЕНЁННЫЕ оценки
     if (scoreData.size === 0) {
-      setSubmitMessage('❌ Необходимо оценить хотя бы один навык');
+      setSubmitMessage('❌ Нет изменений для отправки. Выберите или измените хотя бы одну оценку.');
       return;
     }
 
     setSubmitting(true);
     setSubmitMessage('');
-    
+
     try {
       const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
         const fieldMapping = {
           'self': 'Self_score',
-          'p1_peer': 'P1_score', 
+          'p1_peer': 'P1_score',
           'p2_peer': 'P2_score',
           'manager': 'Manager_score',
           'peer': 'P1_score'
         };
-        
+
         const field = fieldMapping[scoreInfo.role] || fieldMapping.peer;
-        
+
         return {
           pageId,
           properties: { [field]: { number: scoreInfo.value } }
         };
       });
 
-      console.log(`[SUBMIT] Sending ${operations.length} operations`);
-      
+      console.log(`[SUBMIT] Sending ${operations.length} changed ratings (out of ${initialScoreData.size} total)`);
+
       const batchOptions = {
         batchSize: operations.length <= 20 ? 20 : 50,
         concurrency: 2,
@@ -379,7 +410,7 @@ export default function SkillsAssessmentForm({ params }) {
         maxRetries: 3,
         forceKV: false
       };
-      
+
       const response = await fetch('/api/batch/submit', {
         method: 'POST',
         headers: {
@@ -397,7 +428,7 @@ export default function SkillsAssessmentForm({ params }) {
       const result = await response.json();
 
       const totalOps = result.totalOperations || operations.length;
-      setSubmitMessage(`✅ ${totalOps} оценок отправлено. Спасибо!`);
+      setSubmitMessage(`✅ ${totalOps} изменённых оценок отправлено. Спасибо!`);
 
       // Очищаем кэш после успешной отправки
       if (typeof window !== 'undefined') {
@@ -414,20 +445,20 @@ export default function SkillsAssessmentForm({ params }) {
 
     } catch (error) {
       console.error('[SUBMIT] Error:', error);
-      
+
       let errorMessage = `❌ Ошибка: ${error.message}`;
-      
+
       if (error.message.includes('rate limit') || error.message.includes('429')) {
         errorMessage = '❌ Превышен лимит запросов. Подождите и попробуйте снова.';
       } else if (error.message.includes('timeout')) {
         errorMessage = '❌ Тайм-аут. Попробуйте уменьшить количество оценок.';
       }
-      
+
       setSubmitMessage(errorMessage);
     } finally {
       setSubmitting(false);
     }
-  }, [scoreData, token]);
+  }, [scoreData, initialScoreData, token]);
 
   const getRoleLabel = (role) => {
     const labels = {
@@ -579,14 +610,22 @@ export default function SkillsAssessmentForm({ params }) {
                   {/* Навыки */}
                   {!isCollapsed && (
                     <div style={{ padding: '20px 0' }}>
-                      {(group.items || []).map((item) => (
-                        <ScoreRow
-                          key={item.pageId}
-                          item={item}
-                          currentScore={scoreData.get(item.pageId)?.value}
-                          onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
-                        />
-                      ))}
+                      {(group.items || []).map((item) => {
+                        // Если есть измененное значение - используем его, иначе исходное
+                        const changedScore = scoreData.get(item.pageId);
+                        const displayScore = changedScore !== undefined
+                          ? changedScore.value
+                          : (initialScoreData.get(item.pageId)?.value ?? item.current);
+
+                        return (
+                          <ScoreRow
+                            key={item.pageId}
+                            item={item}
+                            currentScore={displayScore}
+                            onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
+                          />
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -623,7 +662,7 @@ export default function SkillsAssessmentForm({ params }) {
 
                 <button
                   type="submit"
-                  disabled={submitting || ratedSkills === 0}
+                  disabled={submitting || scoreData.size === 0}
                   style={{
                     padding: '12px 24px',
                     backgroundColor: submitting ? '#6c757d' : '#28a745',
@@ -632,7 +671,7 @@ export default function SkillsAssessmentForm({ params }) {
                     borderRadius: 8,
                     fontSize: 16,
                     fontWeight: 600,
-                    cursor: submitting || ratedSkills === 0 ? 'not-allowed' : 'pointer',
+                    cursor: submitting || scoreData.size === 0 ? 'not-allowed' : 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8
@@ -649,7 +688,7 @@ export default function SkillsAssessmentForm({ params }) {
                       }} />
                       Отправляем...
                     </>
-                  ) : 'Отправить оценку'}
+                  ) : scoreData.size > 0 ? `Отправить изменения (${scoreData.size})` : 'Отправить оценку'}
                 </button>
               </div>
 
