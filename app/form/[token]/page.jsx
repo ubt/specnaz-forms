@@ -427,7 +427,7 @@ export default function SkillsAssessmentForm({ params }) {
         onRetry={refetch}
         loadingStage={loadingStage}
       >
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
+        <div style={{ maxWidth: 1600, margin: '0 auto', padding: 24 }}>
           {/* Заголовок */}
           <div style={{
             backgroundColor: 'white',
