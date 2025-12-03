@@ -11,8 +11,7 @@ export default function Home() {
           fontSize: 36,
           color: '#2c3e50',
           marginBottom: 16,
-          fontWeight: 700,
-		  align-items: center
+          fontWeight: 700
         }}>
           📊 Notion Skills Review
         </h1>
@@ -22,6 +21,7 @@ export default function Home() {
 	src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk"
 	title="YouTube video player"
 	frameborder="0"
+	className="mx-auto block"
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 	referrerpolicy="strict-origin-when-cross-origin"
 	allowfullscreen="true">
