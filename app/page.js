@@ -13,11 +13,8 @@ export default function Home() {
           marginBottom: 16,
           fontWeight: 700
         }}>
-          📊 Notion Skill Review
+          📊 Notion Skills Review
         </h1>
-        <p style={{ fontSize: 18, color: '#6c757d', lineHeight: 1.6 }}>
-          Система оценки компетенций сотрудников
-        </p>
       </div>
 <div style="text-align: center;">
 <iframe
