@@ -20,7 +20,7 @@ export const POST = withErrorHandler(async (req) => {
   logger.info('[BATCH SUBMIT] New request');
   
   initKV();
-  
+   
   // Парсинг тела запроса
   let body;
   try {
