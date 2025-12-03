@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScoreRow from '@/components/ScoreRow';
+import styles from './page.module.css';
 
 // Константы
 const CACHE_TTL = 60 * 60 * 1000; // 60 минут
@@ -16,35 +17,16 @@ const LOADING_STAGES = [
 const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   if (error) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#f8f9fa',
-        padding: 24
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 600 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <h3 style={{ fontSize: 24, fontWeight: 600, color: '#dc3545', marginBottom: 16 }}>
+      <div className={styles.stateContainer}>
+        <div className={styles.stateContent}>
+          <div className={styles.stateIcon}>⚠️</div>
+          <h3 className={styles.errorTitle}>
             Ошибка загрузки данных
           </h3>
-          <p style={{ color: '#6c757d', marginBottom: 24, lineHeight: 1.5, fontSize: 16 }}>
+          <p className={styles.stateText}>
             {error}
           </p>
-          <button
-            onClick={onRetry}
-            style={{
-              backgroundColor: '#007bff',
-              color: 'white',
-              padding: '12px 24px',
-              border: 'none',
-              borderRadius: 8,
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
+          <button onClick={onRetry} className={styles.retryButton}>
             Попробовать снова
           </button>
         </div>
@@ -54,21 +36,14 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
 
   if (!loading && empty) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#f8f9fa',
-        padding: 24
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 600 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-          <h3 style={{ fontSize: 24, fontWeight: 600, color: '#6c757d', marginBottom: 16 }}>
+      <div className={styles.stateContainer}>
+        <div className={styles.stateContent}>
+          <div className={styles.stateIcon}>📋</div>
+          <h3 className={styles.emptyTitle}>
             Навыки не найдены
           </h3>
-          <p style={{ color: '#6c757d', lineHeight: 1.5, fontSize: 16 }}>
-            Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе. 
+          <p className={styles.emptyText}>
+            Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе.
             Обратитесь к администратору для проверки настроек матрицы компетенций.
           </p>
         </div>
@@ -82,35 +57,10 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
 // Компонент индикатора загрузки - только спиннер
 const LoadingIndicator = ({ stage }) => {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      backgroundColor: '#f8f9fa',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 1000
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          border: '4px solid #e9ecef',
-          borderTop: '4px solid #007bff',
-          borderRadius: '50%',
-          margin: '0 auto 16px',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-        <p style={{ 
-          color: '#6c757d', 
-          fontSize: 16,
-          margin: 0,
-          minHeight: 24
-        }}>
+    <div className={styles.loadingContainer}>
+      <div className={styles.loadingContent}>
+        <div className={styles.spinner}></div>
+        <p className={styles.loadingText}>
           {LOADING_STAGES[stage] || 'Загрузка...'}
         </p>
       </div>
@@ -471,83 +421,54 @@ export default function SkillsAssessmentForm({ params }) {
 
   // Показываем индикатор загрузки поверх всего
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      backgroundColor: '#f8f9fa',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
+    <div className={styles.pageContainer}>
       {loading && <LoadingIndicator stage={loadingStage} />}
-      
-      <StateHandler 
-        loading={loading} 
-        error={error} 
+
+      <StateHandler
+        loading={loading}
+        error={error}
         empty={skillGroups.length === 0}
         onRetry={refetch}
       >
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
+        <div className={styles.mainContent}>
           {/* Заголовок */}
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: 12,
-            padding: 32,
-            marginBottom: 24,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            textAlign: 'center'
-          }}>
-            <h1 style={{ fontSize: 28, fontWeight: 700, color: '#2c3e50', marginBottom: 16 }}>
+          <div className={styles.header}>
+            <h1 className={styles.title}>
               📊 Форма оценки компетенций
             </h1>
             {stats?.reviewerName && (
-              <div style={{ color: '#495057', fontSize: 16, fontWeight: 600 }}>
+              <div className={styles.reviewerName}>
                 Оценивающий: {stats.reviewerName}
               </div>
             )}
-            <div style={{ color: '#6c757d', marginTop: 8, fontSize: 14, lineHeight: 1.5 }}>
+            <div className={styles.subtitle}>
               Оцените уровень владения навыками по шкале от 0 до 5
               {fromCache && (
-                <span style={{ color: '#28a745', marginLeft: 8 }}>
+                <span className={styles.cacheIndicator}>
                   (данные из кэша)
                 </span>
               )}
 			  <br/>
-              Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
+              Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a>
             </div>
           </div>
 
           {/* Прогресс */}
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: 12,
-            padding: 20,
-            marginBottom: 24,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 12
-            }}>
-              <span style={{ fontWeight: 600, color: '#495057' }}>Прогресс оценки</span>
-              <span style={{ color: '#6c757d', fontSize: 14 }}>
+          <div className={styles.progressBlock}>
+            <div className={styles.progressHeader}>
+              <span className={styles.progressLabel}>Прогресс оценки</span>
+              <span className={styles.progressCount}>
                 {ratedSkills} из {totalSkills} навыков
               </span>
             </div>
-            <div style={{
-              width: '100%',
-              height: 8,
-              backgroundColor: '#e9ecef',
-              borderRadius: 4,
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                width: `${totalSkills > 0 ? (ratedSkills / totalSkills) * 100 : 0}%`,
-                height: '100%',
-                backgroundColor: ratedSkills === totalSkills ? '#28a745' : '#007bff',
-                borderRadius: 4,
-                transition: 'all 0.3s ease'
-              }}></div>
-            </div>        
+            <div className={styles.progressBarContainer}>
+              <div
+                className={`${styles.progressBar} ${
+                  ratedSkills === totalSkills ? styles.progressBarComplete : styles.progressBarIncomplete
+                }`}
+                style={{ width: `${totalSkills > 0 ? (ratedSkills / totalSkills) * 100 : 0}%` }}
+              ></div>
+            </div>
           </div>
 
           {/* Форма */}
@@ -555,60 +476,32 @@ export default function SkillsAssessmentForm({ params }) {
             {skillGroups.map((group) => {
               const key = `${group.employeeId}_${group.role}`;
               const isCollapsed = collapsedGroups[key];
-              
+
               return (
-                <div
-                  key={key}
-                  style={{
-                    backgroundColor: 'white',
-                    borderRadius: 12,
-                    marginBottom: 24,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                    overflow: 'hidden'
-                  }}
-                >
+                <div key={key} className={styles.skillGroup}>
                   {/* Заголовок группы */}
-                  <div
-                    onClick={() => toggleGroup(key)}
-                    style={{
-                      backgroundColor: '#f8f9fa',
-                      padding: 20,
-                      borderBottom: '1px solid #dee2e6',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <div>
-                      <h2 style={{ fontSize: 20, fontWeight: 600, color: '#495057', margin: 0, marginBottom: 8 }}>
+                  <div onClick={() => toggleGroup(key)} className={styles.groupHeader}>
+                    <div className={styles.groupHeaderLeft}>
+                      <h2 className={styles.groupTitle}>
                         👤 {group.employeeName}
                       </h2>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <span style={{
-                          backgroundColor: '#007bff',
-                          color: 'white',
-                          padding: '4px 12px',
-                          borderRadius: 16,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          textTransform: 'uppercase'
-                        }}>
+                      <div className={styles.groupMeta}>
+                        <span className={styles.roleBadge}>
                           {getRoleLabel(group.role)}
                         </span>
-                        <span style={{ color: '#6c757d', fontSize: 14 }}>
+                        <span className={styles.skillsCount}>
                           {group.items?.length || 0} навыков
                         </span>
                       </div>
                     </div>
-                    <span style={{ fontSize: 20, color: '#6c757d' }}>
+                    <span className={styles.collapseIcon}>
                       {isCollapsed ? '▶' : '▼'}
                     </span>
                   </div>
 
                   {/* Навыки */}
                   {!isCollapsed && (
-                    <div style={{ padding: '20px 0' }}>
+                    <div className={styles.skillsContainer}>
                       {(group.items || []).map((item) => {
                         // Если есть измененное значение - используем его, иначе исходное
                         const changedScore = scoreData.get(item.pageId);
@@ -632,28 +525,15 @@ export default function SkillsAssessmentForm({ params }) {
             })}
 
             {/* Панель отправки */}
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: 12,
-              padding: 24,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              position: 'sticky',
-              bottom: 24
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 16
-              }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#495057', marginBottom: 4 }}>
+            <div className={styles.submitPanel}>
+              <div className={styles.submitContent}>
+                <div className={styles.submitInfo}>
+                  <div className={styles.submitReadiness}>
                     Готовность: {Math.round((ratedSkills / totalSkills) * 100) || 0}%
                   </div>
-                  <div style={{ color: '#6c757d', fontSize: 14 }}>
-                    {ratedSkills === totalSkills ? 
-                      '✅ Все навыки оценены' : 
+                  <div className={styles.submitStatus}>
+                    {ratedSkills === totalSkills ?
+                      '✅ Все навыки оценены' :
                       `${totalSkills - ratedSkills} навыков осталось`
                     }
                   </div>
@@ -662,29 +542,15 @@ export default function SkillsAssessmentForm({ params }) {
                 <button
                   type="submit"
                   disabled={submitting || scoreData.size === 0}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: submitting ? '#6c757d' : '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontSize: 16,
-                    fontWeight: 600,
-                    cursor: submitting || scoreData.size === 0 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}
+                  className={`${styles.submitButton} ${
+                    submitting || scoreData.size === 0
+                      ? styles.submitButtonDisabled
+                      : styles.submitButtonActive
+                  }`}
                 >
                   {submitting ? (
                     <>
-                      <div style={{
-                        width: 16, height: 16,
-                        border: '2px solid rgba(255,255,255,0.3)',
-                        borderTop: '2px solid white',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite'
-                      }} />
+                      <div className={styles.submitButtonSpinner} />
                       Отправляем...
                     </>
                   ) : scoreData.size > 0 ? `Отправить изменения (${scoreData.size})` : 'Отправить оценку'}
@@ -692,14 +558,11 @@ export default function SkillsAssessmentForm({ params }) {
               </div>
 
               {submitMessage && (
-                <div style={{
-                  marginTop: 16,
-                  padding: 12,
-                  borderRadius: 8,
-                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : '#d4edda',
-                  color: submitMessage.includes('❌') ? '#721c24' : '#155724',
-                  fontSize: 14
-                }}>
+                <div className={`${styles.submitMessage} ${
+                  submitMessage.includes('❌')
+                    ? styles.submitMessageError
+                    : styles.submitMessageSuccess
+                }`}>
                   {submitMessage}
                 </div>
               )}
@@ -710,18 +573,11 @@ export default function SkillsAssessmentForm({ params }) {
 
       {/* Время загрузки - показываем только если есть данные и время > 0 */}
       {!loading && loadTime > 0 && (
-        <div style={{ textAlign: 'center', color: '#6c757d', fontSize: 12, paddingBottom: 24 }}>
+        <div className={styles.loadTime}>
           Загружено за {loadTime.toFixed(2)} сек.
           {fromCache && ' (из кэша)'}
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

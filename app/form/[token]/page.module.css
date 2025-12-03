@@ -1,0 +1,357 @@
+/* Основной контейнер */
+.pageContainer {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.mainContent {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* Компонент состояния - ошибка и пустое состояние */
+.stateContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  padding: 24px;
+}
+
+.stateContent {
+  text-align: center;
+  max-width: 600px;
+}
+
+.stateIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.errorTitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: #dc3545;
+  margin-bottom: 16px;
+}
+
+.emptyTitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: #6c757d;
+  margin-bottom: 16px;
+}
+
+.stateText {
+  color: #6c757d;
+  margin-bottom: 24px;
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+.emptyText {
+  color: #6c757d;
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+.retryButton {
+  background-color: #007bff;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.retryButton:hover {
+  background-color: #0056b3;
+}
+
+/* Индикатор загрузки */
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+}
+
+.loadingContent {
+  text-align: center;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e9ecef;
+  border-top: 4px solid #007bff;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  animation: spin 1s linear infinite;
+}
+
+.loadingText {
+  color: #6c757d;
+  font-size: 16px;
+  margin: 0;
+  min-height: 24px;
+}
+
+/* Заголовок формы */
+.header {
+  background-color: white;
+  border-radius: 12px;
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 16px;
+}
+
+.reviewerName {
+  color: #495057;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subtitle {
+  color: #6c757d;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.cacheIndicator {
+  color: #28a745;
+  margin-left: 8px;
+}
+
+/* Блок прогресса */
+.progressBlock {
+  background-color: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progressLabel {
+  font-weight: 600;
+  color: #495057;
+}
+
+.progressCount {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.progressBarContainer {
+  width: 100%;
+  height: 8px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.progressBarIncomplete {
+  background-color: #007bff;
+}
+
+.progressBarComplete {
+  background-color: #28a745;
+}
+
+/* Группа навыков */
+.skillGroup {
+  background-color: white;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.groupHeader {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-bottom: 1px solid #dee2e6;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.groupHeaderLeft {
+  flex: 1;
+}
+
+.groupTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: #495057;
+  margin: 0;
+  margin-bottom: 8px;
+}
+
+.groupMeta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.roleBadge {
+  background-color: #007bff;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.skillsCount {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.collapseIcon {
+  font-size: 20px;
+  color: #6c757d;
+}
+
+.skillsContainer {
+  padding: 20px 0;
+}
+
+/* Панель отправки */
+.submitPanel {
+  background-color: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  bottom: 24px;
+}
+
+.submitContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.submitInfo {
+  flex: 1;
+}
+
+.submitReadiness {
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 4px;
+}
+
+.submitStatus {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.submitButton {
+  padding: 12px 24px;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.submitButtonActive {
+  background-color: #28a745;
+  cursor: pointer;
+}
+
+.submitButtonActive:hover {
+  background-color: #218838;
+}
+
+.submitButtonDisabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.submitButtonSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.submitMessage {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.submitMessageError {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.submitMessageSuccess {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+/* Время загрузки */
+.loadTime {
+  text-align: center;
+  color: #6c757d;
+  font-size: 12px;
+  padding-bottom: 24px;
+}
+
+/* Анимация вращения */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
