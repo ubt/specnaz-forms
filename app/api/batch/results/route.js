@@ -10,8 +10,7 @@ const CACHE_TTL = 10000; // Кэшируем результаты на 10 сек
 
 export async function GET(req, context) {
   initKV(context.env);
-  console.log('[BATCH RESULTS] Получен запрос на результаты batch операций');
-  
+
   try {
     const url = new URL(req.url);
     const jobIds = url.searchParams.get('jobIds');
@@ -23,7 +22,6 @@ export async function GET(req, context) {
     // Очистка кэша если запрошена
     if (clearCache) {
       resultsCache.clear();
-      console.log('[BATCH RESULTS] Кэш результатов очищен');
     }
 
     // Валидация параметров
@@ -60,8 +58,6 @@ export async function GET(req, context) {
       );
     }
 
-    console.log(`[BATCH RESULTS] Загружаем результаты для ${jobIdArray.length} задач`);
-
     // Проверяем доступность KV
     if (!isKVConnected()) {
       return NextResponse.json({
@@ -75,9 +71,8 @@ export async function GET(req, context) {
     // Проверяем кэш
     const cacheKey = `results_${jobIdArray.sort().join('_')}_${format}_${onlySuccessful}_${onlyErrors}`;
     const cached = resultsCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log('[BATCH RESULTS] Возвращаем закэшированные результаты');
       return NextResponse.json({
         ...cached.data,
         cached: true,
@@ -90,7 +85,6 @@ export async function GET(req, context) {
     try {
       statuses = await getKVBatchStatus(jobIdArray);
     } catch (statusError) {
-      console.error('[BATCH RESULTS] Ошибка получения статусов:', statusError.message);
       return NextResponse.json({
         error: "Ошибка проверки статуса задач",
         details: statusError.message,
@@ -133,14 +127,11 @@ export async function GET(req, context) {
     }
 
     // Получаем результаты для завершенных задач
-    console.log(`[BATCH RESULTS] Получаем результаты для ${completedJobs.length} завершенных задач`);
-    
     let results;
     try {
       const completedJobIds = completedJobs.map(job => job.id);
       results = await getKVBatchResults(completedJobIds);
     } catch (resultsError) {
-      console.error('[BATCH RESULTS] Ошибка получения результатов:', resultsError.message);
       return NextResponse.json({
         error: "Ошибка загрузки результатов из KV",
         details: resultsError.message,
@@ -155,8 +146,6 @@ export async function GET(req, context) {
         suggestion: "Возможно, результаты были удалены или истек срок их хранения"
       }, { status: 404 });
     }
-
-    console.log(`[BATCH RESULTS] Найдено ${results.length} результатов операций`);
 
     // Применяем фильтры
     let filteredResults = results;
@@ -208,17 +197,9 @@ export async function GET(req, context) {
     // Очищаем старые записи кэша
     cleanupResultsCache();
 
-    console.log(`[BATCH RESULTS] Результаты подготовлены. Успешно: ${analysis.successful}, Ошибок: ${analysis.failed}`);
-    
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error('[BATCH RESULTS] Критическая ошибка:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
-
     return NextResponse.json({
       error: process.env.NODE_ENV === 'development' 
         ? `Ошибка получения результатов: ${error.message}`
@@ -230,8 +211,6 @@ export async function GET(req, context) {
 }
 
 export async function POST(req) {
-  console.log('[BATCH RESULTS] POST запрос - массовое получение результатов');
-  
   try {
     const { jobIds, options = {} } = await req.json();
     
@@ -269,8 +248,6 @@ export async function POST(req) {
         { status: 400 }
       );
     }
-
-    console.log(`[BATCH RESULTS] POST обработка ${jobIds.length} задач`);
 
     // Проверяем доступность KV
     if (!isKVConnected()) {
@@ -336,13 +313,9 @@ export async function POST(req) {
     // Рекомендации для следующих действий
     response.recommendations = generateResultsRecommendations(statusAnalysis, resultsAnalysis);
 
-    console.log(`[BATCH RESULTS] POST ответ подготовлен. Результатов: ${results ? results.length : 0}`);
-    
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error('[BATCH RESULTS] Ошибка POST запроса:', error.message);
-    
     return NextResponse.json({
       error: "Ошибка массового получения результатов",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,

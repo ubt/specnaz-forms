@@ -28,13 +28,12 @@ export async function POST(req) {
         await setEmployeeUrl(pages[0].pageId, url);
         updated++;
       } catch (error) {
-        console.error('[EXPORT LINKS] Failed to update', userId, error);
+        // Update failed
       }
     }
 
     return NextResponse.json({ ok: true, updated });
   } catch (error) {
-    console.error('[EXPORT LINKS] Critical error:', error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
   }
 }
