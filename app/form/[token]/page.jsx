@@ -407,8 +407,7 @@ export default function SkillsAssessmentForm({ params }) {
         batchSize: operations.length <= 20 ? 20 : 50,
         concurrency: 2,
         rateLimitDelay: operations.length > 30 ? 3000 : 2500,
-        maxRetries: 3,
-        forceKV: false
+        maxRetries: 3
       };
 
       const response = await fetch('/api/batch/submit', {

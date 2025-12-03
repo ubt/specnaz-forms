@@ -7,12 +7,10 @@ import { verifyReviewToken } from "@/lib/token";
 import { BatchSubmitRequest } from "@/lib/schema";
 import { CONFIG } from "@/lib/config";
 import {
-  NotionBatchProcessor,
   addBatchToKVQueue,
   isKVConnected,
   initKV
 } from "@/lib/kv-queue";
-import { notion } from "@/lib/notion";
 import { logger } from "@/lib/logger";
 
 // POST - отправка batch операций
@@ -48,7 +46,7 @@ export const POST = withErrorHandler(async (req) => {
   const { operations, options = {} } = validationResult.data;
   logger.info(`[BATCH SUBMIT] ${operations.length} operations validated`);
 
-  // Определение режима обработки
+  // Проверка доступности KV
   let kvAvailable = false;
   try {
     kvAvailable = await isKVConnected();
@@ -56,32 +54,14 @@ export const POST = withErrorHandler(async (req) => {
     kvAvailable = false;
   }
 
-  const forceKV = options.forceKV === true || body.forceKV === true;
-  let processingMode = 'direct';
-
-  if (forceKV && !kvAvailable) {
+  if (!kvAvailable) {
     throw Errors.ServiceUnavailable(
       "Cloudflare KV недоступно",
       "Проверьте настройки KV"
     );
   }
 
-  if (operations.length > CONFIG.DIRECT_PROCESSING.MAX_OPERATIONS) {
-    if (kvAvailable) {
-      processingMode = 'kv_queue';
-    } else {
-      throw Errors.ServiceUnavailable(
-        `Для ${operations.length} операций требуется KV`,
-        `Максимум без KV: ${CONFIG.DIRECT_PROCESSING.MAX_OPERATIONS}`
-      );
-    }
-  }
-
-  if (forceKV && kvAvailable) {
-    processingMode = 'kv_queue';
-  }
-
-  logger.info(`[BATCH SUBMIT] Mode: ${processingMode}, KV: ${kvAvailable}`);
+  logger.info(`[BATCH SUBMIT] Processing via KV queue`);
 
   // Настройки процессора
   const processorOptions = {
@@ -89,46 +69,24 @@ export const POST = withErrorHandler(async (req) => {
     concurrency: Math.min(options.concurrency || CONFIG.BATCH.DEFAULT_CONCURRENCY, CONFIG.BATCH.MAX_CONCURRENCY),
     rateLimitDelay: Math.max(options.rateLimitDelay || CONFIG.BATCH.MIN_RATE_LIMIT_DELAY, 2000),
     maxRetries: Math.min(options.maxRetries || CONFIG.BATCH.MAX_RETRIES, 5),
-    useKV: processingMode === 'kv_queue',
     reviewerUserId: payload.reviewerUserId
   };
 
-  // Выполнение
-  if (processingMode === 'kv_queue') {
-    const { batchId, jobIds } = await addBatchToKVQueue(operations, processorOptions);
-    
-    logger.info(`[BATCH SUBMIT] KV batch created: ${batchId}, ${jobIds.length} jobs`);
-    
-    return NextResponse.json({
-      success: true,
-      batchId,
-      jobIds,
-      totalOperations: operations.length,
-      totalJobs: jobIds.length,
-      estimatedDuration: Math.ceil(operations.length * 2.5),
-      message: `✅ ${operations.length} операций добавлено в очередь`,
-      statusEndpoint: `/api/batch/status?jobIds=${jobIds.join(',')}`,
-      resultsEndpoint: `/api/batch/results?jobIds=${jobIds.join(',')}`
-    });
-  }
+  // Отправка в KV очередь
+  const { batchId, jobIds } = await addBatchToKVQueue(operations, processorOptions);
 
-  // Прямая обработка
-  const processor = new NotionBatchProcessor(notion, processorOptions);
-  const result = await processor.processBatchDirectly(operations);
-  
-  const successRate = result.stats.totalOperations > 0 ?
-    (result.stats.successful / result.stats.totalOperations * 100).toFixed(1) : 0;
-
-  logger.info(`[BATCH SUBMIT] Direct completed: ${result.stats.successful}/${result.stats.totalOperations}`);
+  logger.info(`[BATCH SUBMIT] KV batch created: ${batchId}, ${jobIds.length} jobs`);
 
   return NextResponse.json({
     success: true,
-    results: result.results,
-    stats: result.stats,
-    totalOperations: result.stats.totalOperations,
-    message: `✅ ${result.stats.successful}/${result.stats.totalOperations} (${successRate}%)`,
-    completed: true,
-    timestamp: new Date().toISOString()
+    batchId,
+    jobIds,
+    totalOperations: operations.length,
+    totalJobs: jobIds.length,
+    estimatedDuration: Math.ceil(operations.length * 2.5),
+    message: `✅ ${operations.length} операций добавлено в очередь`,
+    statusEndpoint: `/api/batch/status?jobIds=${jobIds.join(',')}`,
+    resultsEndpoint: `/api/batch/results?jobIds=${jobIds.join(',')}`
   });
   
 }, { operation: 'batch-submit' });
@@ -151,7 +109,6 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     kv: { status: kvStatus, available: kvStatus === 'available' },
     limits: {
-      direct: CONFIG.DIRECT_PROCESSING,
       batch: CONFIG.BATCH
     },
     environment: {
