@@ -107,49 +107,38 @@ const ScoreRow = memo(({ item, onChange, currentScore }) => {
 
         {/* Шкала */}
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: 8,
-          minWidth: 320
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+          gap: 12,
+          minWidth: 320,
+          width: '100%',
+          alignItems: 'start'
         }}>
-          {/* Кнопки */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(6, 1fr)',
-            gap: 8,
-            width: '100%'
-          }}>
-            {[0, 1, 2, 3, 4, 5].map((score) => (
+          {[0, 1, 2, 3, 4, 5].map((score) => (
+            <div key={score} style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 6
+            }}>
               <ScoreButton
-                key={score}
                 value={score}
                 currentValue={value}
                 onSelect={handleValueChange}
                 label={`${score} - ${scoreLabels[score]}`}
               />
-            ))}
-          </div>
-
-          {/* Подписи */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(6, 1fr)',
-            gap: 8,
-            fontSize: 10,
-            color: '#6c757d',
-            textAlign: 'center',
-            width: '100%'
-          }}>
-            {Object.values(scoreLabels).map((label, index) => (
-              <div key={index} style={{
-                fontWeight: value === index ? 600 : 400,
-                color: value === index ? '#495057' : '#6c757d'
+              <div style={{
+                fontSize: 10,
+                textAlign: 'center',
+                lineHeight: 1.3,
+                fontWeight: value === score ? 600 : 400,
+                color: value === score ? '#495057' : '#6c757d',
+                maxWidth: 90
               }}>
-                {label}
+                {scoreLabels[score]}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
