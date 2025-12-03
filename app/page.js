@@ -29,7 +29,7 @@ export default function Home() {
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 	referrerpolicy="strict-origin-when-cross-origin"
 	style ="margin:auto"
-	allowfullscreen="true"
+	allowfullscreen="true">
 </iframe>
     </main>
   );
