@@ -15,12 +15,8 @@ export default function Home() {
         }}>
           📊 Notion Skill Review
         </h1>
-        <p style={{ 
-          fontSize: 18, 
-          color: '#6c757d',
-          lineHeight: 1.6
-        }}>
-          Система оценки компетенций сотрудников через Notion API
+        <p style={{ fontSize: 18, color: '#6c757d', lineHeight: 1.6 }}>
+          Система оценки компетенций сотрудников
         </p>
       </div>
 
@@ -29,7 +25,6 @@ export default function Home() {
         gap: 24,
         gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))'
       }}>
-        {/* Админ-панель */}
         <div style={{
           background: '#f8f9fa',
           border: '1px solid #e9ecef',
@@ -41,12 +36,8 @@ export default function Home() {
           <h2 style={{ fontSize: 20, marginBottom: 12, color: '#495057' }}>
             Админ-панель
           </h2>
-          <p style={{ 
-            color: '#6c757d', 
-            marginBottom: 20,
-            lineHeight: 1.5
-          }}>
-            Генерация персональных ссылок для оценки компетенций сотрудников
+          <p style={{ color: '#6c757d', marginBottom: 20, lineHeight: 1.5 }}>
+            Генерация персональных ссылок для оценки
           </p>
           <a 
             href="/admin" 
@@ -57,16 +48,14 @@ export default function Home() {
               color: 'white',
               textDecoration: 'none',
               borderRadius: 8,
-              fontWeight: 600,
-              transition: 'background-color 0.2s ease'
+              fontWeight: 600
             }}
           >
-            Открыть админ-панель
+            Открыть
           </a>
         </div>
       </div>
 
-      {/* Информационная секция */}
       <div style={{
         marginTop: 48,
         padding: 24,
@@ -74,37 +63,18 @@ export default function Home() {
         border: '1px solid #b8daff',
         borderRadius: 12
       }}>
-        <h3 style={{ 
-          fontSize: 18, 
-          marginBottom: 16, 
-          color: '#004085',
-          fontWeight: 600
-        }}>
+        <h3 style={{ fontSize: 18, marginBottom: 16, color: '#004085', fontWeight: 600 }}>
           ℹ️ Как это работает
         </h3>
-        <div style={{ 
-          color: '#004085', 
-          lineHeight: 1.6,
-          fontSize: 14
-        }}>
+        <div style={{ color: '#004085', lineHeight: 1.6, fontSize: 14 }}>
           <p style={{ marginBottom: 12 }}>
-            <strong>1. Генерация ссылок:</strong> Администратор создает персональные ссылки для оценки компетенций команды
+            <strong>1.</strong> Администратор создает ссылки для команды
           </p>
           <p style={{ marginBottom: 12 }}>
-            <strong>2. Оценка навыков:</strong> Сотрудники переходят по своим ссылкам и оценивают компетенции коллег
-          </p>
-          <p style={{ marginBottom: 12 }}>
-            <strong>3. Сохранение в Notion:</strong> Все оценки автоматически сохраняются в базу данных Notion
+            <strong>2.</strong> Сотрудники оценивают компетенции по ссылкам
           </p>
           <p style={{ margin: 0 }}>
-            <strong>Формат ссылок:</strong> <code style={{ 
-              background: 'rgba(0,0,0,0.1)', 
-              padding: '2px 6px', 
-              borderRadius: 4,
-              fontSize: 13
-            }}>
-              /form/&lt;зашифрованный-токен&gt;
-            </code>
+            <strong>3.</strong> Оценки сохраняются в Notion
           </p>
         </div>
       </div>

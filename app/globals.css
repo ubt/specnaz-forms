@@ -24,22 +24,6 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
   border: 2px solid white;
   box-shadow: 0 2px 6px rgba(0,123,255,0.3);
-  border: none;
-}
-
-input[type="range"]::-webkit-slider-track {
-  background: transparent;
-  border: none;
-}
-
-input[type="range"]::-moz-range-track {
-  background: transparent;
-  border: none;
-}
-
-input[type="range"]::-ms-track {
-  background: transparent;
-  border: none;
 }
 
 /* Анимация загрузки */
@@ -52,9 +36,9 @@ input[type="range"]::-ms-track {
   animation: spin 1s linear infinite;
 }
 
-/* Плавные переходы для кнопок */
+/* Кнопки оценки */
 .score-button {
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .score-button:hover {
@@ -62,7 +46,20 @@ input[type="range"]::-ms-track {
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
-/* Стили для прогресс-бара */
+.score-button:active {
+  transform: translateY(0);
+}
+
+/* Прогресс-бар */
 .progress-bar {
   transition: width 0.3s ease;
+}
+
+/* Плавные переходы */
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
 }

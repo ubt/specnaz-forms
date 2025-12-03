@@ -2,24 +2,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 
-async function parseResponse(res) {
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  if (ct.includes("application/json")) { 
-    try { 
-      return await res.json(); 
-    } catch { 
-      return null; 
-    } 
-  }
-  try { 
-    const t = await res.text(); 
-    return t ? { error: t } : null; 
-  } catch { 
-    return null; 
-  }
-}
-
-export default function OptimizedAdmin() {
+export default function AdminPage() {
   const [teamName, setTeamName] = useState("");
   const [expDays, setExpDays] = useState(14);
   const [adminKey, setAdminKey] = useState("");
@@ -29,48 +12,26 @@ export default function OptimizedAdmin() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // Валидация формы (синхронизирована с backend Zod схемой)
   const validation = useMemo(() => {
-    const errors = {};
-
-    if (!teamName.trim()) {
-      errors.teamName = "Название команды обязательно";
-    } else if (teamName.trim().length < 2) {
-      errors.teamName = "Название команды слишком короткое (минимум 2 символа)";
-    } else if (teamName.trim().length > 100) {
-      errors.teamName = "Название команды слишком длинное (максимум 100 символов)";
-    }
-
-    if (expDays < 1 || expDays > 365) {
-      errors.expDays = "Срок должен быть от 1 до 365 дней";
-    }
-
-    if (!adminKey.trim()) {
-      errors.adminKey = "Admin key обязателен";
-    } else if (adminKey.trim().length < 4) {
-      errors.adminKey = "Admin key слишком короткий";
-    }
-
-    return {
-      errors,
-      isValid: Object.keys(errors).length === 0
-    };
+    const errs = {};
+    if (!teamName.trim()) errs.teamName = "Название команды обязательно";
+    else if (teamName.trim().length < 2) errs.teamName = "Минимум 2 символа";
+    else if (teamName.trim().length > 100) errs.teamName = "Максимум 100 символов";
+    if (expDays < 1 || expDays > 365) errs.expDays = "От 1 до 365 дней";
+    if (!adminKey.trim()) errs.adminKey = "Admin key обязателен";
+    else if (adminKey.trim().length < 4) errs.adminKey = "Admin key слишком короткий";
+    return { errors: errs, isValid: Object.keys(errs).length === 0 };
   }, [teamName, expDays, adminKey]);
 
   const generate = useCallback(async () => {
     if (!validation.isValid) {
       setErrors(validation.errors);
-      setMsg("Исправьте ошибки в форме");
+      setMsg("Исправьте ошибки");
       return;
     }
 
-    setMsg("");
-    setLinks([]);
-    setErrors({});
-    setLoading(true);
-    setProgress(0);
+    setMsg(""); setLinks([]); setErrors({}); setLoading(true); setProgress(0);
     
-    // Анимация прогресса
     let p = 0;
     const timer = setInterval(() => {
       p = Math.min(90, p + Math.random() * 8);
@@ -78,379 +39,150 @@ export default function OptimizedAdmin() {
     }, 200);
 
     try {
-      const requestData = {
-        teamName: teamName.trim(),
-        expDays: Number(expDays),
-        adminKey: adminKey.trim()
-      };
-
-      console.log('[ADMIN] Generating links for team:', requestData.teamName);
-      
       const res = await fetch("/api/admin/sign", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": requestData.adminKey
-        },
-        body: JSON.stringify(requestData)
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey.trim() },
+        body: JSON.stringify({ teamName: teamName.trim(), expDays: Number(expDays) })
       });
 
-      const data = await parseResponse(res);
+      const data = await res.json();
       
-      if (!res.ok) {
-        const errorMsg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-        throw new Error(errorMsg);
-      }
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-      const generatedLinks = data.links || [];
-      setLinks(generatedLinks);
-      
-      const successMsg = `✅ Команда: ${data.teamName}. Создано ссылок: ${data.count || generatedLinks.length}`;
-      setMsg(successMsg);
-      
-      console.log('[ADMIN] Successfully generated', generatedLinks.length, 'links');
+      setLinks(data.links || []);
+      setMsg(`✅ Команда: ${data.teamName}. Создано: ${data.count}`);
 
     } catch (error) {
-      console.error('[ADMIN] Generation failed:', error);
-      
       let errorMsg = "❌ ";
-      if (error.message.includes("403") || error.message.includes("Forbidden")) {
-        errorMsg += "Неверный admin key";
-      } else if (error.message.includes("404")) {
-        errorMsg += "Команда не найдена";
-      } else if (error.message.includes("500")) {
-        errorMsg += "Ошибка сервера";
-      } else {
-        errorMsg += error.message || "Неизвестная ошибка";
-      }
-      
+      if (error.message.includes("403")) errorMsg += "Неверный admin key";
+      else if (error.message.includes("404")) errorMsg += "Команда не найдена";
+      else errorMsg += error.message;
       setMsg(errorMsg);
     } finally {
       clearInterval(timer);
       setProgress(100);
-      setTimeout(() => {
-        setLoading(false);
-        setProgress(0);
-      }, 700);
+      setTimeout(() => { setLoading(false); setProgress(0); }, 500);
     }
-  }, [teamName, expDays, adminKey, validation.isValid]);
-
-  // Экспорт ссылок в Notion
-  const exportToNotion = useCallback(async () => {
-    if (!links.length) return;
-
-    try {
-      const res = await fetch("/api/admin/export-links", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-key": adminKey.trim()
-        },
-        body: JSON.stringify({
-          links: links.map(l => ({ userId: l.userId, url: l.url }))
-        })
-      });
-
-      const data = await parseResponse(res);
-
-      if (!res.ok) {
-        const errorMsg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-        throw new Error(errorMsg);
-      }
-
-      setMsg("✅ Ссылки экспортированы в Notion");
-      setTimeout(() => setMsg(""), 2000);
-    } catch (error) {
-      console.error('[EXPORT]', error);
-      setMsg(`❌ ${error.message}`);
-    }
-  }, [links, adminKey]);
+  }, [teamName, expDays, adminKey, validation]);
 
   const inputStyle = {
     padding: "10px 12px",
     border: "2px solid #e1e5e9",
     borderRadius: 8,
     fontSize: 14,
-    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-    width: "100%",
-    fontFamily: "inherit"
+    width: "100%"
   };
 
-  const errorInputStyle = {
-    ...inputStyle,
-    borderColor: "#dc3545",
-    boxShadow: "0 0 0 3px rgba(220,53,69,0.1)"
-  };
-
-  const labelStyle = {
-    display: "block",
-    margin: "16px 0 6px",
-    fontWeight: 600,
-    color: "#495057",
-    fontSize: 14
-  };
+  const errorStyle = { ...inputStyle, borderColor: "#dc3545" };
 
   return (
-    <main style={{ 
-      padding: 32, 
-      maxWidth: 1000, 
-      margin: "0 auto",
-      fontFamily: "system-ui, -apple-system, sans-serif"
-    }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ 
-          fontSize: 32, 
-          fontWeight: 700, 
-          color: "#2c3e50",
-          margin: 0,
-          marginBottom: 8
-        }}>
-          🔗 Генерация ссылок для ревью
-        </h1>
-        <p style={{ 
-          color: "#6c757d", 
-          fontSize: 16,
-          margin: 0
-        }}>
-          Создайте персональные ссылки для оценки компетенций сотрудников
-        </p>
-      </div>
+    <main style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
+      <h1 style={{ fontSize: 32, fontWeight: 700, color: "#2c3e50", marginBottom: 32 }}>
+        🔗 Генерация ссылок
+      </h1>
 
-      <div style={{ 
-        backgroundColor: "#f8f9fa",
-        padding: 24,
-        borderRadius: 12,
-        border: "1px solid #e9ecef",
-        marginBottom: 24
-      }}>
-        <label style={labelStyle}>
-          📋 Название команды
-        </label>
+      <div style={{ backgroundColor: "#f8f9fa", padding: 24, borderRadius: 12, marginBottom: 24 }}>
+        <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>📋 Команда</label>
         <input
           value={teamName}
           onChange={e => setTeamName(e.target.value)}
-          placeholder="Введите название команды"
-          style={errors.teamName ? errorInputStyle : inputStyle}
-          maxLength={100}
+          placeholder="Название команды"
+          style={errors.teamName ? errorStyle : inputStyle}
         />
-        {errors.teamName && (
-          <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>
-            {errors.teamName}
-          </div>
-        )}
+        {errors.teamName && <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>{errors.teamName}</div>}
 
-        <label style={labelStyle}>
-          ⏰ Срок действия (дней)
-        </label>
+        <label style={{ display: "block", margin: "16px 0 6px", fontWeight: 600 }}>⏰ Срок (дней)</label>
         <input
           type="number"
-          min={1}
-          max={365}
+          min={1} max={365}
           value={expDays}
           onChange={e => setExpDays(Number(e.target.value))}
-          style={errors.expDays ? errorInputStyle : inputStyle}
+          style={errors.expDays ? errorStyle : inputStyle}
         />
-        {errors.expDays && (
-          <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>
-            {errors.expDays}
-          </div>
-        )}
+        {errors.expDays && <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>{errors.expDays}</div>}
 
-        <label style={labelStyle}>
-          🔑 Admin Key
-        </label>
+        <label style={{ display: "block", margin: "16px 0 6px", fontWeight: 600 }}>🔑 Admin Key</label>
         <input
           type="password"
           value={adminKey}
           onChange={e => setAdminKey(e.target.value)}
-          placeholder="Введите admin key"
-          style={errors.adminKey ? errorInputStyle : inputStyle}
+          placeholder="Admin key"
+          style={errors.adminKey ? errorStyle : inputStyle}
         />
-        {errors.adminKey && (
-          <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>
-            {errors.adminKey}
-          </div>
-        )}
+        {errors.adminKey && <div style={{ color: "#dc3545", fontSize: 12, marginTop: 4 }}>{errors.adminKey}</div>}
 
         {loading && (
           <div style={{ margin: "20px 0" }}>
-            <div style={{
-              height: 12,
-              background: "#e9ecef",
-              borderRadius: 6,
-              overflow: "hidden",
-              marginBottom: 8
-            }}>
+            <div style={{ height: 12, background: "#e9ecef", borderRadius: 6, overflow: "hidden" }}>
               <div style={{
                 width: `${progress}%`,
                 height: "100%",
                 background: "linear-gradient(90deg, #007bff, #0056b3)",
-                transition: "width 200ms ease-out",
-                borderRadius: "inherit"
+                transition: "width 200ms"
               }} />
             </div>
-            <div style={{ 
-              fontSize: 13, 
-              color: "#6c757d",
-              textAlign: "center"
-            }}>
-              Генерируем ссылки... {Math.round(progress)}%
+            <div style={{ fontSize: 13, color: "#6c757d", textAlign: "center", marginTop: 8 }}>
+              Генерируем... {Math.round(progress)}%
             </div>
           </div>
         )}
 
-        <div style={{ marginTop: 20 }}>
-          <button
-            onClick={generate}
-            disabled={loading || !validation.isValid}
-            style={{
-              padding: "12px 24px",
-              background: loading || !validation.isValid ? "#6c757d" : "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: loading || !validation.isValid ? "not-allowed" : "pointer",
-              transition: "all 0.2s ease",
-              boxShadow: loading || !validation.isValid ? "none" : "0 4px 8px rgba(0,123,255,0.2)"
-            }}
-          >
-            {loading ? "⏳ Генерируем..." : "🚀 Сгенерировать ссылки"}
-          </button>
-        </div>
+        <button
+          onClick={generate}
+          disabled={loading || !validation.isValid}
+          style={{
+            marginTop: 20,
+            padding: "12px 24px",
+            background: loading || !validation.isValid ? "#6c757d" : "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 16,
+            fontWeight: 600,
+            cursor: loading || !validation.isValid ? "not-allowed" : "pointer"
+          }}
+        >
+          {loading ? "⏳ Генерируем..." : "🚀 Сгенерировать"}
+        </button>
       </div>
 
       {msg && (
         <div style={{
           padding: "12px 16px",
           borderRadius: 8,
-          backgroundColor: msg.includes("❌") ? "#f8d7da" : 
-                          msg.includes("📋") || msg.includes("📁") ? "#d1ecf1" : "#d4edda",
-          color: msg.includes("❌") ? "#721c24" : 
-                 msg.includes("📋") || msg.includes("📁") ? "#0c5460" : "#155724",
-          border: `1px solid ${msg.includes("❌") ? "#f5c6cb" : 
-                               msg.includes("📋") || msg.includes("📁") ? "#bee5eb" : "#c3e6cb"}`,
-          marginBottom: 20,
-          fontSize: 14,
-          fontWeight: 500
+          backgroundColor: msg.includes("❌") ? "#f8d7da" : "#d4edda",
+          color: msg.includes("❌") ? "#721c24" : "#155724",
+          marginBottom: 20
         }}>
           {msg}
         </div>
       )}
 
       {links.length > 0 && (
-        <div style={{
-          backgroundColor: "white",
-          border: "1px solid #dee2e6",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
-        }}>
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "16px 20px",
-            backgroundColor: "#f8f9fa",
-            borderBottom: "1px solid #dee2e6"
-          }}>
-            <h3 style={{ 
-              margin: 0, 
-              fontSize: 18, 
-              fontWeight: 600,
-              color: "#495057"
-            }}>
-              📋 Сгенерированные ссылки ({links.length})
+        <div style={{ backgroundColor: "white", border: "1px solid #dee2e6", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", backgroundColor: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#495057" }}>
+              📋 Ссылки ({links.length})
             </h3>
-            <button
-              onClick={exportToNotion}
-              style={{
-                padding: "6px 12px",
-                background: "#28a745",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: "pointer"
-              }}
-            >
-              🧾 Экспорт в Notion
-            </button>
           </div>
-
-          <div style={{ padding: "0 20px 20px" }}>
-            <table style={{ 
-              borderCollapse: "collapse", 
-              width: "100%",
-              marginTop: 16
-            }}>
+          <div style={{ padding: 20 }}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr style={{ backgroundColor: "#f8f9fa" }}>
-                  <th style={{
-                    textAlign: "left",
-                    padding: "12px 8px",
-                    fontWeight: 600,
-                    color: "#495057",
-                    fontSize: 14,
-                    borderBottom: "2px solid #dee2e6"
-                  }}>
+                  <th style={{ textAlign: "left", padding: "12px 8px", fontWeight: 600, borderBottom: "2px solid #dee2e6" }}>
                     👤 Ревьюер
                   </th>
-                  <th style={{
-                    textAlign: "left",
-                    padding: "12px 8px",
-                    fontWeight: 600,
-                    color: "#495057",
-                    fontSize: 14,
-                    borderBottom: "2px solid #dee2e6"
-                  }}>
+                  <th style={{ textAlign: "left", padding: "12px 8px", fontWeight: 600, borderBottom: "2px solid #dee2e6" }}>
                     🔗 Ссылка
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {links.map((link, index) => (
-                  <tr
-                    key={index}
-                    style={{
-                      borderBottom: index < links.length - 1 ? "1px solid #f1f3f4" : "none",
-                      transition: "background-color 0.1s ease"
-                    }}
-                    onMouseEnter={(e) => e.target.parentElement.style.backgroundColor = "#f8f9fa"}
-                    onMouseLeave={(e) => e.target.parentElement.style.backgroundColor = "transparent"}
-                  >
-                    <td style={{
-                      padding: "12px 8px",
-                      fontSize: 14,
-                      color: "#495057",
-                      fontWeight: 500
-                    }}>
-                      {link.name}
-                    </td>
-                    <td style={{
-                      padding: "12px 8px",
-                      fontSize: 13,
-                      fontFamily: "Monaco, 'Courier New', monospace",
-                      maxWidth: 500,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap"
-                    }}>
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          color: "#007bff",
-                          textDecoration: "none",
-                          borderBottom: "1px dotted #007bff"
-                        }}
-                        onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
-                        onMouseLeave={(e) => e.target.style.textDecoration = "none"}
-                        title={link.url}
-                      >
+                {links.map((link, i) => (
+                  <tr key={i} style={{ borderBottom: i < links.length - 1 ? "1px solid #f1f3f4" : "none" }}>
+                    <td style={{ padding: "12px 8px", fontSize: 14, fontWeight: 500 }}>{link.name}</td>
+                    <td style={{ padding: "12px 8px", fontSize: 13, fontFamily: "monospace" }}>
+                      <a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#007bff" }}>
                         {link.url.length > 60 ? `${link.url.substring(0, 60)}...` : link.url}
                       </a>
                     </td>
@@ -461,27 +193,6 @@ export default function OptimizedAdmin() {
           </div>
         </div>
       )}
-      
-      {/* Информационная панель */}
-      <div style={{
-        marginTop: 32,
-        padding: 20,
-        backgroundColor: "#e7f3ff",
-        border: "1px solid #b8daff",
-        borderRadius: 8,
-        fontSize: 14,
-        color: "#004085"
-      }}>
-        <h4 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 600 }}>
-          ℹ️ Информация
-        </h4>
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
-          <li>Ссылки действительны в течение указанного срока</li>
-          <li>Каждая ссылка персональна и привязана к конкретному ревьюеру</li>
-          <li>Ссылки содержат зашифрованный токен с правами доступа</li>
-          <li>После истечения срока ссылки перестают работать</li>
-        </ul>
-      </div>
     </main>
   );
 }

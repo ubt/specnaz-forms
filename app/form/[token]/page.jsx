@@ -3,7 +3,17 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ScoreRow from '@/components/ScoreRow';
 
-const StateHandler = ({ loading, error, empty, onRetry, children }) => {
+// Константы
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const LOADING_STAGES = [
+  'Проверка токена...',
+  'Загрузка списка сотрудников...',
+  'Загрузка навыков...',
+  'Подготовка формы...'
+];
+
+// Компонент состояния загрузки с прогрессом
+const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }) => {
   if (loading) {
     return (
       <div style={{
@@ -13,16 +23,33 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
         minHeight: '100vh',
         backgroundColor: '#f8f9fa'
       }}>
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', maxWidth: 400 }}>
           <div className="loading-spinner" style={{
             width: 48,
             height: 48,
             border: '4px solid #e9ecef',
             borderTop: '4px solid #007bff',
             borderRadius: '50%',
-            margin: '0 auto 16px'
+            margin: '0 auto 16px',
+            animation: 'spin 1s linear infinite'
           }}></div>
-          <p style={{ color: '#6c757d', fontSize: 16 }}>Загрузка навыков для оценки...</p>
+          <p style={{ color: '#495057', fontSize: 16, fontWeight: 500, marginBottom: 8 }}>
+            {LOADING_STAGES[loadingStage] || 'Загрузка...'}
+          </p>
+          <div style={{
+            width: '100%',
+            height: 4,
+            backgroundColor: '#e9ecef',
+            borderRadius: 2,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              width: `${((loadingStage + 1) / LOADING_STAGES.length) * 100}%`,
+              height: '100%',
+              backgroundColor: '#007bff',
+              transition: 'width 0.3s ease'
+            }}></div>
+          </div>
         </div>
       </div>
     );
@@ -40,20 +67,10 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
       }}>
         <div style={{ textAlign: 'center', maxWidth: 600 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <h3 style={{ 
-            fontSize: 24, 
-            fontWeight: 600, 
-            color: '#dc3545', 
-            marginBottom: 16 
-          }}>
+          <h3 style={{ fontSize: 24, fontWeight: 600, color: '#dc3545', marginBottom: 16 }}>
             Ошибка загрузки данных
           </h3>
-          <p style={{ 
-            color: '#6c757d', 
-            marginBottom: 24,
-            lineHeight: 1.5,
-            fontSize: 16
-          }}>
+          <p style={{ color: '#6c757d', marginBottom: 24, lineHeight: 1.5, fontSize: 16 }}>
             {error}
           </p>
           <button
@@ -66,8 +83,7 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
               borderRadius: 8,
               fontSize: 16,
               fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease'
+              cursor: 'pointer'
             }}
           >
             Попробовать снова
@@ -89,19 +105,10 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
       }}>
         <div style={{ textAlign: 'center', maxWidth: 600 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-          <h3 style={{ 
-            fontSize: 24, 
-            fontWeight: 600, 
-            color: '#6c757d', 
-            marginBottom: 16 
-          }}>
+          <h3 style={{ fontSize: 24, fontWeight: 600, color: '#6c757d', marginBottom: 16 }}>
             Навыки не найдены
           </h3>
-          <p style={{ 
-            color: '#6c757d',
-            lineHeight: 1.5,
-            fontSize: 16
-          }}>
+          <p style={{ color: '#6c757d', lineHeight: 1.5, fontSize: 16 }}>
             Возможно, вам не назначены задачи по оценке или данные ещё не настроены в системе. 
             Обратитесь к администратору для проверки настроек матрицы компетенций.
           </p>
@@ -113,46 +120,78 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   return children;
 };
 
+// Хук для загрузки данных с кэшированием
 function useSkillsData(token) {
-  const [state, setState] = useState({
-    skillGroups: [],
-    loading: true,
-    error: null,
-    scoreData: new Map(),
-    stats: null,
-    loadTime: 0
+  const [state, setState] = useState(() => {
+    // Попытка загрузить из кэша при инициализации
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`skills_${token}`);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_TTL) {
+            console.log('[SKILLS] Using cached data');
+            return {
+              skillGroups: data.skillGroups || [],
+              loading: false,
+              error: null,
+              scoreData: new Map(data.scores || []),
+              stats: data.stats,
+              loadTime: 0,
+              fromCache: true,
+              loadingStage: 3
+            };
+          }
+        }
+      } catch {
+        // Игнорируем ошибки кэша
+      }
+    }
+    return {
+      skillGroups: [],
+      loading: true,
+      error: null,
+      scoreData: new Map(),
+      stats: null,
+      loadTime: 0,
+      loadingStage: 0
+    };
   });
 
-  const fetchSkills = useCallback(async () => {
+  const fetchSkills = useCallback(async (forceRefresh = false) => {
     const start = performance.now();
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    
+    // Если есть кэш и не принудительное обновление
+    if (!forceRefresh && state.fromCache && state.skillGroups.length > 0) {
+      return;
+    }
+    
+    setState(prev => ({ ...prev, loading: true, error: null, loadingStage: 0 }));
     
     try {
-      console.log('[SKILLS] Начинаем загрузку навыков для токена:', token);
+      setState(prev => ({ ...prev, loadingStage: 1 }));
       
       const response = await fetch(`/api/form/${token}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
 
-      console.log('[SKILLS] Статус ответа:', response.status);
+      setState(prev => ({ ...prev, loadingStage: 2 }));
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `HTTP ${response.status}: Ошибка сервера`
-        );
+        throw new Error(errorData.error || `HTTP ${response.status}: Ошибка сервера`);
       }
 
       const result = await response.json();
-      console.log('[SKILLS] Получен ответ от API:', result);
 
       if (!result.rows || !Array.isArray(result.rows)) {
         throw new Error('API вернул некорректный формат данных');
       }
 
+      setState(prev => ({ ...prev, loadingStage: 3 }));
+
+      // Группировка данных
       const grouped = {};
       for (const row of result.rows) {
         const key = `${row.employeeId}_${row.role}`;
@@ -175,62 +214,75 @@ function useSkillsData(token) {
 
       const skillGroups = Object.values(grouped);
 
-      // Заполняем карту оценок существующими значениями из Notion
+      // Заполняем начальные оценки
       const initialScoreData = new Map();
       skillGroups.forEach(group => {
         group.items?.forEach(item => {
           if (item.current !== null && item.current !== undefined) {
-            initialScoreData.set(item.pageId, {
-              value: item.current,
-              role: group.role
-            });
+            initialScoreData.set(item.pageId, { value: item.current, role: group.role });
           }
         });
       });
-      console.log(`[SKILLS] Загружено ${skillGroups.length} групп навыков`);
 
-      setState(prev => ({
-        ...prev,
+      const loadTime = (performance.now() - start) / 1000;
+
+      // Сохраняем в кэш
+      if (typeof window !== 'undefined') {
+        try {
+          const cacheData = {
+            data: {
+              skillGroups,
+              scores: Array.from(initialScoreData.entries()),
+              stats: result.stats
+            },
+            timestamp: Date.now()
+          };
+          localStorage.setItem(`skills_${token}`, JSON.stringify(cacheData));
+        } catch {
+          // Игнорируем ошибки кэша
+        }
+      }
+
+      setState({
         skillGroups,
         loading: false,
         error: null,
         stats: result.stats,
-        loadTime: (performance.now() - start) / 1000,
-        scoreData: initialScoreData
-      }));
+        loadTime,
+        scoreData: initialScoreData,
+        fromCache: false,
+        loadingStage: 3
+      });
       
     } catch (error) {
-      console.error('[SKILLS] Ошибка загрузки навыков:', error);
+      console.error('[SKILLS] Error:', error);
       setState(prev => ({ 
         ...prev, 
         error: error.message, 
         loading: false,
-        skillGroups: []
+        skillGroups: prev.fromCache ? prev.skillGroups : []
       }));
     }
-  }, [token]);
+  }, [token, state.fromCache, state.skillGroups.length]);
 
   const updateSkillScore = useCallback((pageId, role, value) => {
     setState(prev => {
       const newScoreData = new Map(prev.scoreData);
       newScoreData.set(pageId, { value, role });
-      return {
-        ...prev,
-        scoreData: newScoreData
-      };
+      return { ...prev, scoreData: newScoreData };
     });
   }, []);
 
   useEffect(() => {
-    if (token) {
+    if (token && !state.fromCache) {
       fetchSkills();
     }
-  }, [token, fetchSkills]);
+  }, [token, fetchSkills, state.fromCache]);
 
   return {
     ...state,
     updateSkillScore,
-    refetch: fetchSkills
+    refetch: () => fetchSkills(true)
   };
 }
 
@@ -238,6 +290,7 @@ export default function SkillsAssessmentForm({ params }) {
   const { token } = params;
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   
   const {
     skillGroups,
@@ -246,6 +299,8 @@ export default function SkillsAssessmentForm({ params }) {
     scoreData,
     stats,
     loadTime,
+    loadingStage,
+    fromCache,
     updateSkillScore,
     refetch
   } = useSkillsData(token);
@@ -256,12 +311,11 @@ export default function SkillsAssessmentForm({ params }) {
 
   const ratedSkills = scoreData.size;
 
-  const [collapsedGroups, setCollapsedGroups] = useState({});
   const toggleGroup = useCallback((key) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-// ИСПРАВЛЕННАЯ функция для обработки отправки формы с лучшей обработкой KV
+  // Обработка отправки формы
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -274,101 +328,74 @@ export default function SkillsAssessmentForm({ params }) {
     setSubmitMessage('');
     
     try {
-      // Преобразуем scoreData в формат операций для batch API
       const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
         const fieldMapping = {
           'self': 'Self_score',
           'p1_peer': 'P1_score', 
           'p2_peer': 'P2_score',
           'manager': 'Manager_score',
-          'peer': 'P1_score' // fallback
+          'peer': 'P1_score'
         };
         
         const field = fieldMapping[scoreInfo.role] || fieldMapping.peer;
         
         return {
-          pageId: pageId,
-          properties: {
-            [field]: { number: scoreInfo.value }
-          }
+          pageId,
+          properties: { [field]: { number: scoreInfo.value } }
         };
       });
 
-      console.log(`[SUBMIT] Отправляем ${operations.length} операций через batch API`);
+      console.log(`[SUBMIT] Sending ${operations.length} operations`);
       
-      // ИСПРАВЛЕНИЕ: Более консервативные настройки для стабильности
-      let batchOptions = {
-        batchSize: Math.min(operations.length <= 20 ? 20 : 40, 50),
-        concurrency: 2,  // Уменьшено для избежания rate limits
-        rateLimitDelay: operations.length > 30 ? 3000 : 2500,  // Увеличено
+      const batchOptions = {
+        batchSize: operations.length <= 20 ? 20 : 50,
+        concurrency: 2,
+        rateLimitDelay: operations.length > 30 ? 3000 : 2500,
         maxRetries: 3,
-        forceKV: false  // Не принуждаем KV, позволяем системе выбрать
+        forceKV: false
       };
       
-      // Для больших объемов предлагаем KV, но не принуждаем
-      if (operations.length > 15) {
-        batchOptions.forceKV = false; // Позволяем системе решить
-        batchOptions.batchSize = 50;
-        batchOptions.concurrency = 2;
-        batchOptions.rateLimitDelay = 3000;
-      }
-      
-      console.log(`[SUBMIT] Настройки batch:`, batchOptions);
-      
-      // Отправляем через batch API
       const response = await fetch('/api/batch/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
-          operations,
-          options: batchOptions
-        })
+        body: JSON.stringify({ operations, options: batchOptions })
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: Ошибка отправки`);
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('[SUBMIT] Ответ от batch API:', result);
 
-      // Простая обработка результата без проверки режима
       const totalOps = result.totalOperations || operations.length;
       setSubmitMessage(`✅ ${totalOps} оценок отправлено. Спасибо!`);
 
-      // Показываем детали если есть ошибки (только для синхронной обработки)
-      if (result.stats?.failed > 0) {
-        const errorDetails = result.results
-          .filter(r => r.status === 'error')
-          .slice(0, 3)
-          .map(r => r.error || 'Неизвестная ошибка')
-          .join('; ');
+      // Очищаем кэш после успешной отправки
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(`skills_${token}`);
+      }
 
+      if (result.stats?.failed > 0) {
         setTimeout(() => {
           setSubmitMessage(prev =>
-            prev + ` ⚠️ Некоторые ошибки: ${errorDetails}${result.stats.failed > 3 ? '...' : ''}`
+            prev + ` ⚠️ ${result.stats.failed} ошибок при сохранении.`
           );
         }, 2000);
       }
 
     } catch (error) {
-      console.error('[SUBMIT] Ошибка отправки:', error);
+      console.error('[SUBMIT] Error:', error);
       
-      let errorMessage = `❌ Ошибка отправки: ${error.message}`;
+      let errorMessage = `❌ Ошибка: ${error.message}`;
       
-      // Специальная обработка для известных ошибок
-      if (error.message.includes('KV')) {
-        errorMessage += ' (Система автоматически переключилась на прямую обработку)';
-      } else if (error.message.includes('rate limit') || error.message.includes('429')) {
+      if (error.message.includes('rate limit') || error.message.includes('429')) {
         errorMessage = '❌ Превышен лимит запросов. Подождите и попробуйте снова.';
       } else if (error.message.includes('timeout')) {
-        errorMessage = '❌ Тайм-аут операции. Попробуйте уменьшить количество одновременно оцениваемых навыков.';
-      } else if (error.message.includes('503')) {
-        errorMessage = '❌ Сервис временно недоступен. Попробуйте позже или уменьшите объем операций.';
+        errorMessage = '❌ Тайм-аут. Попробуйте уменьшить количество оценок.';
       }
       
       setSubmitMessage(errorMessage);
@@ -376,6 +403,16 @@ export default function SkillsAssessmentForm({ params }) {
       setSubmitting(false);
     }
   }, [scoreData, token]);
+
+  const getRoleLabel = (role) => {
+    const labels = {
+      'self': 'Самооценка',
+      'manager': 'Оценка менеджера',
+      'p1_peer': 'Peer-оценка',
+      'p2_peer': 'Peer-оценка'
+    };
+    return labels[role] || 'Peer оценка';
+  };
 
   return (
     <div style={{ 
@@ -388,12 +425,9 @@ export default function SkillsAssessmentForm({ params }) {
         error={error} 
         empty={skillGroups.length === 0}
         onRetry={refetch}
+        loadingStage={loadingStage}
       >
-        <div style={{ 
-          maxWidth: 1200, 
-          margin: '0 auto', 
-          padding: 24 
-        }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
           {/* Заголовок */}
           <div style={{
             backgroundColor: 'white',
@@ -403,36 +437,25 @@ export default function SkillsAssessmentForm({ params }) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
             textAlign: 'center'
           }}>
-            <h1 style={{ 
-              fontSize: 28, 
-              fontWeight: 700, 
-              color: '#2c3e50', 
-              marginBottom: 16 
-            }}>
+            <h1 style={{ fontSize: 28, fontWeight: 700, color: '#2c3e50', marginBottom: 16 }}>
               📊 Форма оценки компетенций
             </h1>
-			 {stats?.reviewerName && (
-              <div style={{
-                color: '#495057',
-                fontSize: 16,
-                fontWeight: 600
-              }}>
+            {stats?.reviewerName && (
+              <div style={{ color: '#495057', fontSize: 16, fontWeight: 600 }}>
                 Оценивающий: {stats.reviewerName}
               </div>
             )}
-            <div style={{
-              color: '#6c757d',
-              marginBottom: 16,
-              fontSize: 16,
-              lineHeight: 1.5
-            }}>
-              Оцените уровень владения навыками по шкале от 0 до 5.
-          <br/>
-              Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
+            <div style={{ color: '#6c757d', marginTop: 8, fontSize: 14, lineHeight: 1.5 }}>
+              Оцените уровень владения навыками по шкале от 0 до 5
+              {fromCache && (
+                <span style={{ color: '#28a745', marginLeft: 8 }}>
+                  (данные из кэша)
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Прогресс-бар */}
+          {/* Прогресс */}
           <div style={{
             backgroundColor: 'white',
             borderRadius: 12,
@@ -446,9 +469,7 @@ export default function SkillsAssessmentForm({ params }) {
               alignItems: 'center',
               marginBottom: 12
             }}>
-              <span style={{ fontWeight: 600, color: '#495057' }}>
-                Прогресс оценки
-              </span>
+              <span style={{ fontWeight: 600, color: '#495057' }}>Прогресс оценки</span>
               <span style={{ color: '#6c757d', fontSize: 14 }}>
                 {ratedSkills} из {totalSkills} навыков
               </span>
@@ -460,7 +481,7 @@ export default function SkillsAssessmentForm({ params }) {
               borderRadius: 4,
               overflow: 'hidden'
             }}>
-              <div className="progress-bar" style={{
+              <div style={{
                 width: `${totalSkills > 0 ? (ratedSkills / totalSkills) * 100 : 0}%`,
                 height: '100%',
                 backgroundColor: ratedSkills === totalSkills ? '#28a745' : '#007bff',
@@ -470,11 +491,12 @@ export default function SkillsAssessmentForm({ params }) {
             </div>        
           </div>
 
-          {/* Форма оценки */}
+          {/* Форма */}
           <form onSubmit={handleSubmit}>
             {skillGroups.map((group) => {
               const key = `${group.employeeId}_${group.role}`;
               const isCollapsed = collapsedGroups[key];
+              
               return (
                 <div
                   key={key}
@@ -500,20 +522,10 @@ export default function SkillsAssessmentForm({ params }) {
                     }}
                   >
                     <div>
-                      <h2 style={{
-                        fontSize: 20,
-                        fontWeight: 600,
-                        color: '#495057',
-                        margin: 0,
-                        marginBottom: 8
-                      }}>
+                      <h2 style={{ fontSize: 20, fontWeight: 600, color: '#495057', margin: 0, marginBottom: 8 }}>
                         👤 {group.employeeName}
                       </h2>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 16
-                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <span style={{
                           backgroundColor: '#007bff',
                           color: 'white',
@@ -523,11 +535,7 @@ export default function SkillsAssessmentForm({ params }) {
                           fontWeight: 600,
                           textTransform: 'uppercase'
                         }}>
-                          {group.role === 'self' ? 'Самооценка' :
-                           group.role === 'manager' ? 'Оценка менеджера' :
-                           group.role === 'p1_peer' ? 'Peer-оценка' :
-                           group.role === 'p2_peer' ? 'Peer-оценка' :
-                           'Peer оценка'}
+                          {getRoleLabel(group.role)}
                         </span>
                         <span style={{ color: '#6c757d', fontSize: 14 }}>
                           {group.items?.length || 0} навыков
@@ -539,25 +547,24 @@ export default function SkillsAssessmentForm({ params }) {
                     </span>
                   </div>
 
-                  {/* Список навыков */}
-					{!isCollapsed && (
-					  <div style={{ padding: '20px 0' }}>
-						{(group.items || []).map((item) => (
-						  <ScoreRow
-							key={item.pageId}
-							item={item}
-							currentScore={scoreData.get(item.pageId)?.value} // ИСПРАВЛЕНИЕ: передаем текущую оценку
-							onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
-							hideComment={true}
-						  />
-						))}
-					  </div>
-					)}
+                  {/* Навыки */}
+                  {!isCollapsed && (
+                    <div style={{ padding: '20px 0' }}>
+                      {(group.items || []).map((item) => (
+                        <ScoreRow
+                          key={item.pageId}
+                          item={item}
+                          currentScore={scoreData.get(item.pageId)?.value}
+                          onChange={({ value }) => updateSkillScore(item.pageId, group.role, value)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
 
-            {/* Панель действий */}
+            {/* Панель отправки */}
             <div style={{
               backgroundColor: 'white',
               borderRadius: 12,
@@ -574,12 +581,8 @@ export default function SkillsAssessmentForm({ params }) {
                 gap: 16
               }}>
                 <div>
-                  <div style={{ 
-                    fontWeight: 600, 
-                    color: '#495057',
-                    marginBottom: 4
-                  }}>
-                    Готовность к отправке: {Math.round((ratedSkills / totalSkills) * 100) || 0}%
+                  <div style={{ fontWeight: 600, color: '#495057', marginBottom: 4 }}>
+                    Готовность: {Math.round((ratedSkills / totalSkills) * 100) || 0}%
                   </div>
                   <div style={{ color: '#6c757d', fontSize: 14 }}>
                     {ratedSkills === totalSkills ? 
@@ -589,45 +592,36 @@ export default function SkillsAssessmentForm({ params }) {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <button
-                    type="submit"
-                    disabled={submitting || ratedSkills === 0}
-                    style={{
-                      padding: '12px 24px',
-                      backgroundColor: submitting ? '#6c757d' : '#28a745',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: 8,
-                      fontSize: 16,
-                      fontWeight: 600,
-                      cursor: submitting || ratedSkills === 0 ? 'not-allowed' : 'pointer',
-                      transition: 'background-color 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(40,167,69,0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8
-                    }}
-                  >
-                    {submitting ? (
-                      <>
-                        <div style={{
-                          width: 16,
-                          height: 16,
-                          border: '2px solid rgba(255,255,255,0.3)',
-                          borderTop: '2px solid white',
-                          borderRadius: '50%',
-                          animation: 'spin 1s linear infinite'
-                        }} />
-                        Отправляем...
-                      </>
-                    ) : (
-                      <>
-                        Отправить оценку
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  disabled={submitting || ratedSkills === 0}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: submitting ? '#6c757d' : '#28a745',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontSize: 16,
+                    fontWeight: 600,
+                    cursor: submitting || ratedSkills === 0 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
+                  {submitting ? (
+                    <>
+                      <div style={{
+                        width: 16, height: 16,
+                        border: '2px solid rgba(255,255,255,0.3)',
+                        borderTop: '2px solid white',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                      Отправляем...
+                    </>
+                  ) : 'Отправить оценку'}
+                </button>
               </div>
 
               {submitMessage && (
@@ -635,14 +629,9 @@ export default function SkillsAssessmentForm({ params }) {
                   marginTop: 16,
                   padding: 12,
                   borderRadius: 8,
-                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : 
-                                  submitMessage.includes('🔄') ? '#d1ecf1' : '#d4edda',
-                  color: submitMessage.includes('❌') ? '#721c24' : 
-                         submitMessage.includes('🔄') ? '#0c5460' : '#155724',
-                  fontSize: 14,
-                  lineHeight: 1.4,
-                  border: `1px solid ${submitMessage.includes('❌') ? '#f5c6cb' : 
-                                      submitMessage.includes('🔄') ? '#bee5eb' : '#c3e6cb'}`
+                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : '#d4edda',
+                  color: submitMessage.includes('❌') ? '#721c24' : '#155724',
+                  fontSize: 14
                 }}>
                   {submitMessage}
                 </div>
@@ -653,29 +642,18 @@ export default function SkillsAssessmentForm({ params }) {
       </StateHandler>
 
       {!loading && (
-        <div style={{
-          textAlign: 'center',
-          color: '#6c757d',
-          fontSize: 12,
-          paddingBottom: 24
-        }}>
-          Страница загрузилась за {loadTime.toFixed(2)} сек.
+        <div style={{ textAlign: 'center', color: '#6c757d', fontSize: 12, paddingBottom: 24 }}>
+          Загружено за {loadTime.toFixed(2)} сек.
+          {fromCache && ' (из кэша)'}
         </div>
       )}
 
-      {/* CSS анимации */}
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        
-        @keyframes shimmer {
-          0% { transform: translateX(-20px); opacity: 0; }
-          50% { opacity: 1; }
-          100% { transform: translateX(20px); opacity: 0; }
-        }
       `}</style>
     </div>
   );
-} 
+}

@@ -1,5 +1,6 @@
 {
-  "name": "notion-review-cloudflare",
+  "name": "notion-review-optimized",
+  "version": "2.0.0",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
