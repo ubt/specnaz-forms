@@ -11,14 +11,15 @@ export default function Home() {
           fontSize: 36,
           color: '#2c3e50',
           marginBottom: 16,
-          fontWeight: 700
+          fontWeight: 700,
+		  align-items: center
         }}>
           📊 Notion Skills Review
         </h1>
 <iframe
 	width="1120"
 	height="630"
-	src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk?autoplay=1"
+	src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk"
 	title="YouTube video player"
 	frameborder="0"
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
