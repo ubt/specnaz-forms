@@ -5,7 +5,7 @@ import ScoreRow from '@/components/ScoreRow';
 import './form-styles.css';
 
 // Константы
-const CACHE_TTL = 60 * 60 * 1000; // 60 минут
+const CACHE_TTL = 10 * 60 * 1000; // 10 минут
 const LOADING_STAGES = [
   'Проверка токена...',
   'Загрузка списка сотрудников...',
