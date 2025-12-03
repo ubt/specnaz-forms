@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScoreRow from '@/components/ScoreRow';
 
 // Константы
@@ -24,30 +24,24 @@ const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }
         backgroundColor: '#f8f9fa'
       }}>
         <div style={{ textAlign: 'center', maxWidth: 400 }}>
-          <div className="loading-spinner" style={{
-            width: 48,
-            height: 48,
-            border: '4px solid #e9ecef',
-            borderTop: '4px solid #007bff',
-            borderRadius: '50%',
-            margin: '0 auto 16px',
-            animation: 'spin 1s linear infinite'
-          }}></div>
-          <p style={{ color: '#495057', fontSize: 16, fontWeight: 500, marginBottom: 8 }}>
+          <p style={{ color: '#495057', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
             {LOADING_STAGES[loadingStage] || 'Загрузка...'}
           </p>
           <div style={{
             width: '100%',
-            height: 4,
+            height: 10,
             backgroundColor: '#e9ecef',
-            borderRadius: 2,
-            overflow: 'hidden'
+            borderRadius: 8,
+            overflow: 'hidden',
+            position: 'relative',
+            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)'
           }}>
             <div style={{
               width: `${((loadingStage + 1) / LOADING_STAGES.length) * 100}%`,
               height: '100%',
               backgroundColor: '#007bff',
-              transition: 'width 0.3s ease'
+              transition: 'width 0.3s ease',
+              borderRadius: 8
             }}></div>
           </div>
         </div>
@@ -122,6 +116,7 @@ const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }
 
 // Хук для загрузки данных с кэшированием
 function useSkillsData(token) {
+  const loadStartRef = useRef(performance.now());
   const [state, setState] = useState(() => {
     // Попытка загрузить из кэша при инициализации
     if (typeof window !== 'undefined') {
@@ -137,7 +132,7 @@ function useSkillsData(token) {
               error: null,
               scoreData: new Map(data.scores || []),
               stats: data.stats,
-              loadTime: 0,
+              loadTime: (performance.now() - loadStartRef.current) / 1000,
               fromCache: true,
               loadingStage: 3
             };
@@ -159,13 +154,17 @@ function useSkillsData(token) {
   });
 
   const fetchSkills = useCallback(async (forceRefresh = false) => {
-    const start = performance.now();
-    
+    loadStartRef.current = performance.now();
+
     // Если есть кэш и не принудительное обновление
     if (!forceRefresh && state.fromCache && state.skillGroups.length > 0) {
+      setState(prev => ({
+        ...prev,
+        loadTime: (performance.now() - loadStartRef.current) / 1000
+      }));
       return;
     }
-    
+
     setState(prev => ({ ...prev, loading: true, error: null, loadingStage: 0 }));
     
     try {
@@ -224,7 +223,7 @@ function useSkillsData(token) {
         });
       });
 
-      const loadTime = (performance.now() - start) / 1000;
+      const loadTime = (performance.now() - loadStartRef.current) / 1000;
 
       // Сохраняем в кэш
       if (typeof window !== 'undefined') {
@@ -256,10 +255,11 @@ function useSkillsData(token) {
       
     } catch (error) {
       console.error('[SKILLS] Error:', error);
-      setState(prev => ({ 
-        ...prev, 
-        error: error.message, 
+      setState(prev => ({
+        ...prev,
+        error: error.message,
         loading: false,
+        loadTime: (performance.now() - loadStartRef.current) / 1000,
         skillGroups: prev.fromCache ? prev.skillGroups : []
       }));
     }
