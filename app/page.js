@@ -19,18 +19,18 @@ export default function Home() {
           Система оценки компетенций сотрудников
         </p>
       </div>
-
+<div style="text-align: center;">
 <iframe
 	width="1120"
 	height="630"
 	src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk?autoplay=1"
 	title="YouTube video player"
 	frameborder="0"
-	style="text-align:center"
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 	referrerpolicy="strict-origin-when-cross-origin"
 	allowfullscreen="true">
 </iframe>
+</div>
     </main>
   );
 }
