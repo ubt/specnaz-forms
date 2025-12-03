@@ -15,8 +15,6 @@ export default function Home() {
         }}>
           📊 Notion Skills Review
         </h1>
-      </div>
-<div style="text-align: center;">
 <iframe
 	width="1120"
 	height="630"
