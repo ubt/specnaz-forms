@@ -28,7 +28,7 @@ export default function Home() {
 	frameborder="0"
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 	referrerpolicy="strict-origin-when-cross-origin"
-	style ="margin:auto"
+	style="margin:auto"
 	allowfullscreen="true">
 </iframe>
     </main>
