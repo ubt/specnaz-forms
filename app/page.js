@@ -20,9 +20,15 @@ export default function Home() {
         </p>
       </div>
 
-<iframe width="1120" height="630" src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk" title="YouTube video player" 
-frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-referrerpolicy="strict-origin-when-cross-origin" allowfullscreen>
+<iframe 
+	width="1120" 
+	height="630" 	
+	src="https://www.youtube.com/embed/PkT0PJwy8mI?si=QH5SZLRUnedZAZJk" 
+	title="YouTube video player" 
+	frameborder="0" 
+	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+	referrerpolicy="strict-origin-when-cross-origin" 
+	allowfullscreen="true"
 </iframe>
     </main>
   );
