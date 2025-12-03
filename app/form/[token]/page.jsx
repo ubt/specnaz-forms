@@ -12,43 +12,8 @@ const LOADING_STAGES = [
   'Подготовка формы...'
 ];
 
-// Компонент состояния загрузки с прогрессом
-const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }) => {
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#f8f9fa'
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 400 }}>
-          <p style={{ color: '#495057', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-            {LOADING_STAGES[loadingStage] || 'Загрузка...'}
-          </p>
-          <div style={{
-            width: '100%',
-            height: 10,
-            backgroundColor: '#e9ecef',
-            borderRadius: 8,
-            overflow: 'hidden',
-            position: 'relative',
-            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)'
-          }}>
-            <div style={{
-              width: `${((loadingStage + 1) / LOADING_STAGES.length) * 100}%`,
-              height: '100%',
-              backgroundColor: '#007bff',
-              transition: 'width 0.3s ease',
-              borderRadius: 8
-            }}></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+// Компонент состояния (БЕЗ индикатора загрузки - он теперь только в основном компоненте)
+const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   if (error) {
     return (
       <div style={{
@@ -87,7 +52,7 @@ const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }
     );
   }
 
-  if (empty) {
+  if (!loading && empty) {
     return (
       <div style={{
         display: 'flex',
@@ -114,9 +79,58 @@ const StateHandler = ({ loading, error, empty, onRetry, loadingStage, children }
   return children;
 };
 
+// Компонент индикатора загрузки
+const LoadingIndicator = ({ stage }) => {
+  const progress = ((stage + 1) / LOADING_STAGES.length) * 100;
+  
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      backgroundColor: '#f8f9fa'
+    }}>
+      <div style={{ textAlign: 'center', maxWidth: 400, width: '100%', padding: 24 }}>
+        {/* Только прогресс-бар, без кружка */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>📊</div>
+        </div>
+        
+        <p style={{ color: '#495057', fontSize: 16, fontWeight: 500, marginBottom: 16 }}>
+          {LOADING_STAGES[stage] || 'Загрузка...'}
+        </p>
+        
+        <div style={{
+          width: '100%',
+          height: 8,
+          backgroundColor: '#e9ecef',
+          borderRadius: 4,
+          overflow: 'hidden',
+          marginBottom: 8
+        }}>
+          <div style={{
+            width: `${progress}%`,
+            height: '100%',
+            backgroundColor: '#007bff',
+            transition: 'width 0.3s ease',
+            borderRadius: 4
+          }}></div>
+        </div>
+        
+        <p style={{ color: '#6c757d', fontSize: 14 }}>
+          {Math.round(progress)}%
+        </p>
+      </div>
+    </div>
+  );
+};
+
 // Хук для загрузки данных с кэшированием
 function useSkillsData(token) {
-  const loadStartRef = useRef(performance.now());
+  // Ref для отслеживания времени начала загрузки
+  const loadStartRef = useRef(null);
+  
   const [state, setState] = useState(() => {
     // Попытка загрузить из кэша при инициализации
     if (typeof window !== 'undefined') {
@@ -132,7 +146,7 @@ function useSkillsData(token) {
               error: null,
               scoreData: new Map(data.scores || []),
               stats: data.stats,
-              loadTime: (performance.now() - loadStartRef.current) / 1000,
+              loadTime: 0,
               fromCache: true,
               loadingStage: 3
             };
@@ -149,25 +163,24 @@ function useSkillsData(token) {
       scoreData: new Map(),
       stats: null,
       loadTime: 0,
-      loadingStage: 0
+      loadingStage: 0,
+      fromCache: false
     };
   });
 
   const fetchSkills = useCallback(async (forceRefresh = false) => {
-    loadStartRef.current = performance.now();
-
     // Если есть кэш и не принудительное обновление
     if (!forceRefresh && state.fromCache && state.skillGroups.length > 0) {
-      setState(prev => ({
-        ...prev,
-        loadTime: (performance.now() - loadStartRef.current) / 1000
-      }));
       return;
     }
-
+    
+    // Запоминаем время начала загрузки
+    loadStartRef.current = performance.now();
+    
     setState(prev => ({ ...prev, loading: true, error: null, loadingStage: 0 }));
     
     try {
+      // Этап 1: начало запроса
       setState(prev => ({ ...prev, loadingStage: 1 }));
       
       const response = await fetch(`/api/form/${token}`, {
@@ -175,6 +188,7 @@ function useSkillsData(token) {
         headers: { 'Content-Type': 'application/json' },
       });
 
+      // Этап 2: получен ответ
       setState(prev => ({ ...prev, loadingStage: 2 }));
       
       if (!response.ok) {
@@ -188,6 +202,7 @@ function useSkillsData(token) {
         throw new Error('API вернул некорректный формат данных');
       }
 
+      // Этап 3: обработка данных
       setState(prev => ({ ...prev, loadingStage: 3 }));
 
       // Группировка данных
@@ -223,7 +238,10 @@ function useSkillsData(token) {
         });
       });
 
-      const loadTime = (performance.now() - loadStartRef.current) / 1000;
+      // Вычисляем время загрузки
+      const loadTime = loadStartRef.current 
+        ? (performance.now() - loadStartRef.current) / 1000 
+        : 0;
 
       // Сохраняем в кэш
       if (typeof window !== 'undefined') {
@@ -255,11 +273,17 @@ function useSkillsData(token) {
       
     } catch (error) {
       console.error('[SKILLS] Error:', error);
-      setState(prev => ({
-        ...prev,
-        error: error.message,
+      
+      // Вычисляем время до ошибки
+      const loadTime = loadStartRef.current 
+        ? (performance.now() - loadStartRef.current) / 1000 
+        : 0;
+      
+      setState(prev => ({ 
+        ...prev, 
+        error: error.message, 
         loading: false,
-        loadTime: (performance.now() - loadStartRef.current) / 1000,
+        loadTime,
         skillGroups: prev.fromCache ? prev.skillGroups : []
       }));
     }
@@ -414,6 +438,19 @@ export default function SkillsAssessmentForm({ params }) {
     return labels[role] || 'Peer оценка';
   };
 
+  // Показываем индикатор загрузки
+  if (loading) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f8f9fa',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <LoadingIndicator stage={loadingStage} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ 
       minHeight: '100vh', 
@@ -425,9 +462,8 @@ export default function SkillsAssessmentForm({ params }) {
         error={error} 
         empty={skillGroups.length === 0}
         onRetry={refetch}
-        loadingStage={loadingStage}
       >
-        <div style={{ maxWidth: 1600, margin: '0 auto', padding: 24 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
           {/* Заголовок */}
           <div style={{
             backgroundColor: 'white',
@@ -450,9 +486,9 @@ export default function SkillsAssessmentForm({ params }) {
               {fromCache && (
                 <span style={{ color: '#28a745', marginLeft: 8 }}>
                   (данные из кэша)
-				</span>
-				 )}
-			<br/>
+                </span>
+              )}
+			  <br/>
               Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
             </div>
           </div>
@@ -643,7 +679,8 @@ export default function SkillsAssessmentForm({ params }) {
         </div>
       </StateHandler>
 
-      {!loading && (
+      {/* Время загрузки - показываем только если есть данные и время > 0 */}
+      {!loading && loadTime > 0 && (
         <div style={{ textAlign: 'center', color: '#6c757d', fontSize: 12, paddingBottom: 24 }}>
           Загружено за {loadTime.toFixed(2)} сек.
           {fromCache && ' (из кэша)'}
