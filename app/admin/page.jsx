@@ -11,6 +11,7 @@ export default function AdminPage() {
   const [progress, setProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [copyMsg, setCopyMsg] = useState("");
 
   const validation = useMemo(() => {
     const errs = {};
@@ -74,6 +75,21 @@ export default function AdminPage() {
   };
 
   const errorStyle = { ...inputStyle, borderColor: "#dc3545" };
+
+  const copyToExcel = useCallback(async () => {
+    try {
+      const header = "Ревьювер\tСсылка";
+      const rows = links.map(link => `${link.name}\t${link.url}`).join("\n");
+      const text = `${header}\n${rows}`;
+
+      await navigator.clipboard.writeText(text);
+      setCopyMsg("✅ Скопировано!");
+      setTimeout(() => setCopyMsg(""), 2000);
+    } catch (error) {
+      setCopyMsg("❌ Ошибка копирования");
+      setTimeout(() => setCopyMsg(""), 2000);
+    }
+  }, [links]);
 
   return (
     <main style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
@@ -160,10 +176,36 @@ export default function AdminPage() {
 
       {links.length > 0 && (
         <div style={{ backgroundColor: "white", border: "1px solid #dee2e6", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ padding: "16px 20px", backgroundColor: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
+          <div style={{ padding: "16px 20px", backgroundColor: "#f8f9fa", borderBottom: "1px solid #dee2e6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#495057" }}>
               📋 Ссылки ({links.length})
             </h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {copyMsg && (
+                <span style={{
+                  fontSize: 14,
+                  color: copyMsg.includes("✅") ? "#28a745" : "#dc3545",
+                  fontWeight: 500
+                }}>
+                  {copyMsg}
+                </span>
+              )}
+              <button
+                onClick={copyToExcel}
+                style={{
+                  padding: "8px 16px",
+                  background: "#28a745",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                📋 Скопировать для Excel
+              </button>
+            </div>
           </div>
           <div style={{ padding: 20 }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
