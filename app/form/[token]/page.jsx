@@ -11,7 +11,7 @@ const LOADING_STAGES = [
   'Загрузка навыков...',
   'Подготовка формы...'
 ];
-
+ 
 // Компонент состояния (БЕЗ индикатора загрузки - он теперь только в основном компоненте)
 const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   if (error) {
