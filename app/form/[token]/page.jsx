@@ -11,11 +11,8 @@ const LOADING_STAGES = [
   'Загрузка навыков...',
   'Подготовка формы...'
 ];
-
-// КРИТИЧНО: Лимит операций для одного запроса (с запасом от 50 subrequests)
-const MAX_OPERATIONS_PER_REQUEST = 35;
  
-// Компонент состояния
+// Компонент состояния (БЕЗ индикатора загрузки - он теперь только в основном компоненте)
 const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   if (error) {
     return (
@@ -82,7 +79,7 @@ const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   return children;
 };
 
-// Компонент индикатора загрузки
+// Компонент индикатора загрузки - только спиннер
 const LoadingIndicator = ({ stage }) => {
   return (
     <div style={{
@@ -121,80 +118,15 @@ const LoadingIndicator = ({ stage }) => {
   );
 };
 
-// Компонент прогресса отправки
-const SubmitProgress = ({ current, total, currentBatch, totalBatches }) => {
-  const progress = total > 0 ? Math.round((current / total) * 100) : 0;
-  
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 2000
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        padding: 32,
-        borderRadius: 16,
-        maxWidth: 400,
-        width: '90%',
-        textAlign: 'center'
-      }}>
-        <div style={{
-          width: 64,
-          height: 64,
-          border: '4px solid #e9ecef',
-          borderTop: '4px solid #28a745',
-          borderRadius: '50%',
-          margin: '0 auto 16px',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-        
-        <h3 style={{ fontSize: 20, fontWeight: 600, color: '#2c3e50', marginBottom: 8 }}>
-          Отправляем оценки...
-        </h3>
-        
-        <p style={{ color: '#6c757d', fontSize: 14, marginBottom: 16 }}>
-          Часть {currentBatch} из {totalBatches}
-        </p>
-        
-        <div style={{
-          width: '100%',
-          height: 8,
-          backgroundColor: '#e9ecef',
-          borderRadius: 4,
-          overflow: 'hidden',
-          marginBottom: 8
-        }}>
-          <div style={{
-            width: `${progress}%`,
-            height: '100%',
-            backgroundColor: '#28a745',
-            borderRadius: 4,
-            transition: 'width 0.3s ease'
-          }}></div>
-        </div>
-        
-        <p style={{ color: '#495057', fontSize: 14, fontWeight: 500 }}>
-          {current} / {total} ({progress}%)
-        </p>
-      </div>
-    </div>
-  );
-};
-
 // Хук для загрузки данных с кэшированием
 function useSkillsData(token) {
+  // Ref для отслеживания времени начала загрузки
   const loadStartRef = useRef(null);
+  // Ref для актуального состояния (чтобы избежать повторных загрузок)
   const stateRef = useRef(null);
   
   const [state, setState] = useState(() => {
+    // Попытка загрузить из кэша при инициализации
     if (typeof window !== 'undefined') {
       try {
         const cached = localStorage.getItem(`skills_${token}`);
@@ -230,6 +162,7 @@ function useSkillsData(token) {
     };
   });
 
+  // Всегда храним актуальное состояние в ref, чтобы callback не создавался заново
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -237,15 +170,18 @@ function useSkillsData(token) {
   const fetchSkills = useCallback(async (forceRefresh = false) => {
     const currentState = stateRef.current || state;
 
+    // Если есть кэш и не принудительное обновление
     if (!forceRefresh && currentState.fromCache && currentState.skillGroups.length > 0) {
       return;
     }
     
+    // Запоминаем время начала загрузки
     loadStartRef.current = performance.now();
     
     setState(prev => ({ ...prev, loading: true, error: null, loadingStage: 0 }));
     
     try {
+      // Этап 1: начало запроса
       setState(prev => ({ ...prev, loadingStage: 1 }));
       
       const response = await fetch(`/api/form/${token}`, {
@@ -253,6 +189,7 @@ function useSkillsData(token) {
         headers: { 'Content-Type': 'application/json' },
       });
 
+      // Этап 2: получен ответ
       setState(prev => ({ ...prev, loadingStage: 2 }));
       
       if (!response.ok) {
@@ -266,8 +203,10 @@ function useSkillsData(token) {
         throw new Error('API вернул некорректный формат данных');
       }
 
+      // Этап 3: обработка данных
       setState(prev => ({ ...prev, loadingStage: 3 }));
 
+      // Группировка данных
       const grouped = {};
       for (const row of result.rows) {
         const key = `${row.employeeId}_${row.role}`;
@@ -290,6 +229,7 @@ function useSkillsData(token) {
 
       const skillGroups = Object.values(grouped);
 
+      // Заполняем начальные оценки
       const initialScoreData = new Map();
       skillGroups.forEach(group => {
         group.items?.forEach(item => {
@@ -299,10 +239,12 @@ function useSkillsData(token) {
         });
       });
 
+      // Вычисляем время загрузки
       const loadTime = loadStartRef.current 
         ? (performance.now() - loadStartRef.current) / 1000 
         : 0;
 
+      // Сохраняем в кэш
       if (typeof window !== 'undefined') {
         try {
           const cacheData = {
@@ -333,6 +275,7 @@ function useSkillsData(token) {
     } catch (error) {
       console.error('[SKILLS] Error:', error);
       
+      // Вычисляем время до ошибки
       const loadTime = loadStartRef.current 
         ? (performance.now() - loadStartRef.current) / 1000 
         : 0;
@@ -368,26 +311,11 @@ function useSkillsData(token) {
   };
 }
 
-// Функция разбиения массива на части
-function chunkArray(array, size) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
-// Функция задержки
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 export default function SkillsAssessmentForm({ params }) {
   const { token } = params;
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0, currentBatch: 0, totalBatches: 0 });
   
   const {
     skillGroups,
@@ -412,7 +340,7 @@ export default function SkillsAssessmentForm({ params }) {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  // ИСПРАВЛЕННАЯ обработка отправки с разбиением на батчи
+  // Обработка отправки формы
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
@@ -425,8 +353,7 @@ export default function SkillsAssessmentForm({ params }) {
     setSubmitMessage('');
     
     try {
-      // Подготовка операций
-      const allOperations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
+      const operations = Array.from(scoreData.entries()).map(([pageId, scoreInfo]) => {
         const fieldMapping = {
           'self': 'Self_score',
           'p1_peer': 'P1_score', 
@@ -443,112 +370,46 @@ export default function SkillsAssessmentForm({ params }) {
         };
       });
 
-      console.log(`[SUBMIT] Total operations: ${allOperations.length}`);
+      console.log(`[SUBMIT] Sending ${operations.length} operations`);
       
-      // КРИТИЧНО: Разбиваем на батчи для соблюдения лимита subrequests
-      const batches = chunkArray(allOperations, MAX_OPERATIONS_PER_REQUEST);
-      console.log(`[SUBMIT] Split into ${batches.length} batches of max ${MAX_OPERATIONS_PER_REQUEST} operations`);
+      const batchOptions = {
+        batchSize: operations.length <= 20 ? 20 : 50,
+        concurrency: 2,
+        rateLimitDelay: operations.length > 30 ? 3000 : 2500,
+        maxRetries: 3,
+        forceKV: false
+      };
       
-      setSubmitProgress({
-        current: 0,
-        total: allOperations.length,
-        currentBatch: 0,
-        totalBatches: batches.length
+      const response = await fetch('/api/batch/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ operations, options: batchOptions })
       });
-      
-      let totalSuccessful = 0;
-      let totalFailed = 0;
-      const allResults = [];
-      const errors = [];
-      
-      // Обрабатываем батчи последовательно
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const batchNumber = i + 1;
-        
-        console.log(`[SUBMIT] Processing batch ${batchNumber}/${batches.length} (${batch.length} operations)`);
-        
-        setSubmitProgress(prev => ({
-          ...prev,
-          currentBatch: batchNumber
-        }));
-        
-        try {
-          const batchOptions = {
-            batchSize: Math.min(batch.length, 35),
-            concurrency: 1, // Последовательная обработка
-            rateLimitDelay: 3000,
-            maxRetries: 3,
-            forceKV: false
-          };
-          
-          const response = await fetch('/api/batch/submit', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ operations: batch, options: batchOptions })
-          });
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `HTTP ${response.status}`);
-          }
-
-          const result = await response.json();
-          
-          // Собираем результаты
-          if (result.results) {
-            allResults.push(...result.results);
-          }
-          
-          const batchSuccessful = result.stats?.successful || 0;
-          const batchFailed = result.stats?.failed || 0;
-          
-          totalSuccessful += batchSuccessful;
-          totalFailed += batchFailed;
-          
-          // Обновляем прогресс
-          setSubmitProgress(prev => ({
-            ...prev,
-            current: prev.current + batch.length
-          }));
-          
-          console.log(`[SUBMIT] Batch ${batchNumber} completed: ${batchSuccessful} success, ${batchFailed} failed`);
-          
-          // Задержка между батчами для rate limiting
-          if (i < batches.length - 1) {
-            console.log(`[SUBMIT] Waiting 3 seconds before next batch...`);
-            await delay(3000);
-          }
-          
-        } catch (batchError) {
-          console.error(`[SUBMIT] Batch ${batchNumber} error:`, batchError);
-          errors.push(`Батч ${batchNumber}: ${batchError.message}`);
-          totalFailed += batch.length;
-          
-          // Если rate limit - делаем дополнительную паузу
-          if (batchError.message?.includes('429') || batchError.message?.includes('rate')) {
-            console.log('[SUBMIT] Rate limit hit, waiting 10 seconds...');
-            await delay(10000);
-          }
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      // Финальное сообщение
-      const totalOps = allOperations.length;
-      const successRate = totalOps > 0 ? Math.round((totalSuccessful / totalOps) * 100) : 0;
-      
-      if (errors.length === 0) {
-        setSubmitMessage(`✅ ${totalSuccessful}/${totalOps} оценок отправлено (${successRate}%). Спасибо!`);
-        
-        // Очищаем кэш после успешной отправки
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem(`skills_${token}`);
-        }
-      } else {
-        setSubmitMessage(`⚠️ Отправлено ${totalSuccessful}/${totalOps} (${successRate}%). Ошибки: ${errors.join('; ')}`);
+      const result = await response.json();
+
+      const totalOps = result.totalOperations || operations.length;
+      setSubmitMessage(`✅ ${totalOps} оценок отправлено. Спасибо!`);
+
+      // Очищаем кэш после успешной отправки
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(`skills_${token}`);
+      }
+
+      if (result.stats?.failed > 0) {
+        setTimeout(() => {
+          setSubmitMessage(prev =>
+            prev + ` ⚠️ ${result.stats.failed} ошибок при сохранении.`
+          );
+        }, 2000);
       }
 
     } catch (error) {
@@ -557,17 +418,14 @@ export default function SkillsAssessmentForm({ params }) {
       let errorMessage = `❌ Ошибка: ${error.message}`;
       
       if (error.message.includes('rate limit') || error.message.includes('429')) {
-        errorMessage = '❌ Превышен лимит запросов. Подождите минуту и попробуйте снова.';
+        errorMessage = '❌ Превышен лимит запросов. Подождите и попробуйте снова.';
       } else if (error.message.includes('timeout')) {
-        errorMessage = '❌ Тайм-аут. Попробуйте отправить меньше оценок за раз.';
-      } else if (error.message.includes('subrequest')) {
-        errorMessage = '❌ Слишком много операций. Попробуйте отправить меньше оценок за раз.';
+        errorMessage = '❌ Тайм-аут. Попробуйте уменьшить количество оценок.';
       }
       
       setSubmitMessage(errorMessage);
     } finally {
       setSubmitting(false);
-      setSubmitProgress({ current: 0, total: 0, currentBatch: 0, totalBatches: 0 });
     }
   }, [scoreData, token]);
 
@@ -581,6 +439,7 @@ export default function SkillsAssessmentForm({ params }) {
     return labels[role] || 'Peer оценка';
   };
 
+  // Показываем индикатор загрузки поверх всего
   return (
     <div style={{ 
       minHeight: '100vh', 
@@ -588,15 +447,6 @@ export default function SkillsAssessmentForm({ params }) {
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
       {loading && <LoadingIndicator stage={loadingStage} />}
-      
-      {submitting && submitProgress.total > 0 && (
-        <SubmitProgress 
-          current={submitProgress.current}
-          total={submitProgress.total}
-          currentBatch={submitProgress.currentBatch}
-          totalBatches={submitProgress.totalBatches}
-        />
-      )}
       
       <StateHandler 
         loading={loading} 
@@ -629,7 +479,7 @@ export default function SkillsAssessmentForm({ params }) {
                   (данные из кэша)
                 </span>
               )}
-              <br/>
+			  <br/>
               Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
             </div>
           </div>
@@ -667,21 +517,7 @@ export default function SkillsAssessmentForm({ params }) {
                 borderRadius: 4,
                 transition: 'all 0.3s ease'
               }}></div>
-            </div>
-            
-            {/* Информация о батчах */}
-            {ratedSkills > MAX_OPERATIONS_PER_REQUEST && (
-              <div style={{ 
-                marginTop: 12, 
-                padding: '8px 12px', 
-                backgroundColor: '#fff3cd', 
-                borderRadius: 6,
-                fontSize: 13,
-                color: '#856404'
-              }}>
-                ℹ️ При отправке {ratedSkills} оценок они будут разбиты на {Math.ceil(ratedSkills / MAX_OPERATIONS_PER_REQUEST)} части для надёжной обработки
-              </div>
-            )}
+            </div>        
           </div>
 
           {/* Форма */}
@@ -822,10 +658,8 @@ export default function SkillsAssessmentForm({ params }) {
                   marginTop: 16,
                   padding: 12,
                   borderRadius: 8,
-                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : 
-                                   submitMessage.includes('⚠️') ? '#fff3cd' : '#d4edda',
-                  color: submitMessage.includes('❌') ? '#721c24' : 
-                         submitMessage.includes('⚠️') ? '#856404' : '#155724',
+                  backgroundColor: submitMessage.includes('❌') ? '#f8d7da' : '#d4edda',
+                  color: submitMessage.includes('❌') ? '#721c24' : '#155724',
                   fontSize: 14
                 }}>
                   {submitMessage}
@@ -836,7 +670,7 @@ export default function SkillsAssessmentForm({ params }) {
         </div>
       </StateHandler>
 
-      {/* Время загрузки */}
+      {/* Время загрузки - показываем только если есть данные и время > 0 */}
       {!loading && loadTime > 0 && (
         <div style={{ textAlign: 'center', color: '#6c757d', fontSize: 12, paddingBottom: 24 }}>
           Загружено за {loadTime.toFixed(2)} сек.
