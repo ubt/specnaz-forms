@@ -1,4 +1,4 @@
-// app/api/batch/submit/route.js - Оптимизированный batch API с учётом лимита subrequests
+// app/api/batch/submit/route.js - Batch API только через KV Queue
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
@@ -7,23 +7,14 @@ import { verifyReviewToken } from "@/lib/token";
 import { BatchSubmitRequest } from "@/lib/schema";
 import { CONFIG } from "@/lib/config";
 import {
-  NotionBatchProcessor,
   addBatchToKVQueue,
   isKVConnected,
   initKV,
-  CLOUDFLARE_SUBREQUEST_LIMIT,
   SAFE_SUBREQUEST_LIMIT
 } from "@/lib/kv-queue";
-import { notion } from "@/lib/notion";
 import { logger } from "@/lib/logger";
 
-// КРИТИЧНО: Используем безопасный лимит для прямой обработки
-const SAFE_DIRECT_LIMIT = Math.min(
-  CONFIG.DIRECT_PROCESSING.MAX_OPERATIONS,
-  SAFE_SUBREQUEST_LIMIT
-);
-
-logger.info(`[BATCH SUBMIT INIT] Safe direct limit set to ${SAFE_DIRECT_LIMIT} operations`);
+logger.info(`[BATCH SUBMIT INIT] All requests will use KV queue (max ${SAFE_SUBREQUEST_LIMIT} ops per job)`);
 
 // POST - отправка batch операций
 export const POST = withErrorHandler(async (req) => {
@@ -57,163 +48,114 @@ export const POST = withErrorHandler(async (req) => {
 
   const { operations, options = {} } = validationResult.data;
   const totalOperations = operations.length;
-  
-  logger.info(`[BATCH SUBMIT] ${totalOperations} operations validated (direct limit: ${SAFE_DIRECT_LIMIT})`);
 
-  // Определение режима обработки
+  logger.info(`[BATCH SUBMIT] ${totalOperations} operations validated, will use KV queue`);
+
+  // Проверка доступности KV
   let kvAvailable = false;
   try {
     kvAvailable = await isKVConnected();
-  } catch {
+  } catch (error) {
+    logger.error('[BATCH SUBMIT] KV connection check failed:', error.message);
     kvAvailable = false;
   }
 
-  const forceKV = options.forceKV === true || body.forceKV === true;
-  let processingMode = 'direct';
-
-  // КРИТИЧНО: Если операций больше безопасного лимита - ОБЯЗАТЕЛЬНО используем KV
-  if (totalOperations > SAFE_DIRECT_LIMIT) {
-    if (kvAvailable) {
-      processingMode = 'kv_queue';
-      logger.info(`[BATCH SUBMIT] Operations (${totalOperations}) > safe limit (${SAFE_DIRECT_LIMIT}), FORCING KV queue`);
-    } else {
-      // БЕЗ KV - строго отклоняем запросы, превышающие безопасный лимит
-      throw Errors.BadRequest(
-        "Слишком много операций для прямой обработки",
-        `Получено ${totalOperations} операций, максимум без KV: ${SAFE_DIRECT_LIMIT}. ` +
-        `KV недоступно. Разбейте запрос на части по ${SAFE_DIRECT_LIMIT} операций.`
-      );
-    }
-  }
-
-  if (forceKV && kvAvailable) {
-    processingMode = 'kv_queue';
-  }
-
-  logger.info(`[BATCH SUBMIT] Mode: ${processingMode}, KV: ${kvAvailable}, Operations: ${totalOperations}`);
-
-  // Настройки процессора с учётом лимитов
-  const processorOptions = {
-    batchSize: Math.min(
-      options.batchSize || CONFIG.BATCH.DEFAULT_BATCH_SIZE, 
-      SAFE_DIRECT_LIMIT
-    ),
-    concurrency: 1, // Последовательная обработка для стабильности
-    rateLimitDelay: Math.max(options.rateLimitDelay || CONFIG.BATCH.MIN_RATE_LIMIT_DELAY, 2500),
-    maxRetries: Math.min(options.maxRetries || CONFIG.BATCH.MAX_RETRIES, 3),
-    useKV: processingMode === 'kv_queue',
-    reviewerUserId: payload.reviewerUserId
-  };
-
-  // Обработка через KV очередь
-  if (processingMode === 'kv_queue') {
-    try {
-      const { batchId, jobIds, operationsPerJob } = await addBatchToKVQueue(operations, processorOptions);
-      
-      logger.info(`[BATCH SUBMIT] KV batch created: ${batchId}, ${jobIds.length} jobs, ${operationsPerJob} ops/job`);
-      
-      return NextResponse.json({
-        success: true,
-        mode: 'kv_queue',
-        batchId,
-        jobIds,
-        totalOperations,
-        totalJobs: jobIds.length,
-        operationsPerJob,
-        estimatedDuration: Math.ceil(totalOperations * 3), // ~3 сек на операцию
-        message: `✅ ${totalOperations} операций добавлено в очередь (${jobIds.length} jobs)`,
-        statusEndpoint: `/api/batch/status?jobIds=${jobIds.join(',')}`,
-        resultsEndpoint: `/api/batch/results?jobIds=${jobIds.join(',')}`,
-        note: `Операции разбиты на ${jobIds.length} частей по ${operationsPerJob} для соблюдения лимитов Cloudflare`
-      });
-    } catch (kvError) {
-      logger.error('[BATCH SUBMIT] KV queue error:', kvError.message);
-      
-      // Если KV не работает - отклоняем запрос
-      throw Errors.ServiceUnavailable(
-        "Ошибка добавления в очередь KV",
-        `${kvError.message}. Для ${totalOperations} операций требуется работающий KV. Попробуйте позже или разбейте на части по ${SAFE_DIRECT_LIMIT} операций.`
-      );
-    }
-  }
-
-  // Прямая обработка - только если в пределах безопасного лимита
-  if (totalOperations > SAFE_DIRECT_LIMIT) {
-    throw Errors.InternalError(
-      "Внутренняя ошибка",
-      `Попытка прямой обработки ${totalOperations} операций при лимите ${SAFE_DIRECT_LIMIT}`
+  // KV обязательно для всех запросов
+  if (!kvAvailable) {
+    throw Errors.ServiceUnavailable(
+      "Cloudflare KV недоступно",
+      "Сервис обработки batch операций временно недоступен. KV queue обязателен для всех запросов. Попробуйте позже."
     );
   }
 
-  const processor = new NotionBatchProcessor(notion, processorOptions);
-  logger.info(`[BATCH SUBMIT] Direct processing ${totalOperations} operations (within safe limit: ${SAFE_DIRECT_LIMIT})`);
-
-  const result = await processor.processBatchDirectly(operations);
-
-  const successRate = result.stats.processedOperations > 0 ?
-    (result.stats.successful / result.stats.processedOperations * 100).toFixed(1) : 0;
-
-  logger.info(`[BATCH SUBMIT] Direct completed: ${result.stats.successful}/${result.stats.processedOperations}`);
-
-  // Формируем ответ
-  const response = {
-    success: true,
-    mode: processingMode,
-    results: result.results,
-    stats: {
-      ...result.stats,
-      totalRequested: totalOperations,
-      subrequestLimit: CLOUDFLARE_SUBREQUEST_LIMIT,
-      safeLimit: SAFE_DIRECT_LIMIT
-    },
-    totalOperations: result.stats.processedOperations,
-    message: `✅ ${result.stats.successful}/${result.stats.processedOperations} (${successRate}%)`,
-    completed: true,
-    timestamp: new Date().toISOString()
+  // Настройки для KV queue
+  const queueOptions = {
+    batchSize: Math.min(
+      options.batchSize || CONFIG.BATCH.DEFAULT_BATCH_SIZE,
+      SAFE_SUBREQUEST_LIMIT
+    ),
+    rateLimitDelay: Math.max(options.rateLimitDelay || CONFIG.BATCH.MIN_RATE_LIMIT_DELAY, 2500),
+    maxRetries: Math.min(options.maxRetries || CONFIG.BATCH.MAX_RETRIES, 3),
+    reviewerUserId: payload.reviewerUserId
   };
 
-  return NextResponse.json(response);
+  // Все операции идут через KV очередь
+  try {
+    const { batchId, jobIds, operationsPerJob } = await addBatchToKVQueue(operations, queueOptions);
+
+    logger.info(`[BATCH SUBMIT] KV batch created: ${batchId}, ${jobIds.length} jobs, ${operationsPerJob} ops/job`);
+
+    return NextResponse.json({
+      success: true,
+      mode: 'kv_queue',
+      batchId,
+      jobIds,
+      totalOperations,
+      totalJobs: jobIds.length,
+      operationsPerJob,
+      estimatedDuration: Math.ceil(totalOperations * 3), // ~3 сек на операцию
+      message: `✅ ${totalOperations} операций добавлено в очередь (${jobIds.length} jobs)`,
+      statusEndpoint: `/api/batch/status?jobIds=${jobIds.join(',')}`,
+      resultsEndpoint: `/api/batch/results?jobIds=${jobIds.join(',')}`,
+      note: `Операции разбиты на ${jobIds.length} частей по ${operationsPerJob} для соблюдения лимитов Cloudflare`
+    });
+  } catch (kvError) {
+    logger.error('[BATCH SUBMIT] KV queue error:', kvError.message);
+
+    throw Errors.ServiceUnavailable(
+      "Ошибка добавления в очередь KV",
+      `${kvError.message}. Попробуйте повторить запрос позже.`
+    );
+  }
   
 }, { operation: 'batch-submit' });
 
 // GET - диагностика
 export async function GET() {
   initKV();
-  
+
   let kvStatus = 'unknown';
   try {
     kvStatus = await isKVConnected() ? 'available' : 'unavailable';
   } catch (error) {
     kvStatus = `error: ${error.message}`;
   }
-  
+
+  const isOperational = kvStatus === 'available';
+
   return NextResponse.json({
-    service: "Notion Batch Processing API",
-    status: "operational",
+    service: "Notion Batch Processing API - KV Queue Only",
+    status: isOperational ? "operational" : "degraded",
     runtime: "edge",
     timestamp: new Date().toISOString(),
-    kv: { 
-      status: kvStatus, 
-      available: kvStatus === 'available' 
+    kv: {
+      status: kvStatus,
+      available: isOperational,
+      required: true,
+      note: "KV queue обязателен для всех batch операций"
     },
     limits: {
-      cloudflare: {
-        hardLimit: CLOUDFLARE_SUBREQUEST_LIMIT,
-        safeLimit: SAFE_DIRECT_LIMIT,
-        explanation: `Жесткий лимит CF Workers: ${CLOUDFLARE_SUBREQUEST_LIMIT}, безопасный с запасом: ${SAFE_DIRECT_LIMIT}`
-      },
-      direct: CONFIG.DIRECT_PROCESSING,
-      batch: CONFIG.BATCH
+      batch: {
+        maxOperationsPerJob: SAFE_SUBREQUEST_LIMIT,
+        defaultBatchSize: CONFIG.BATCH.DEFAULT_BATCH_SIZE,
+        maxBatchSize: CONFIG.BATCH.MAX_BATCH_SIZE,
+        explanation: `Операции автоматически разбиваются на jobs по ${SAFE_SUBREQUEST_LIMIT} операций`
+      }
     },
     environment: {
       hasNotionToken: !!process.env.NOTION_TOKEN,
       hasJWTSecret: !!process.env.JWT_SECRET
     },
+    mode: {
+      processing: "kv_queue_only",
+      directProcessing: "disabled",
+      reason: "Все запросы обрабатываются через KV queue для надежности и соблюдения лимитов Cloudflare"
+    },
     recommendations: {
-      smallBatch: `До ${SAFE_DIRECT_LIMIT} операций - прямая обработка (рекомендуется)`,
-      largeBatch: `Более ${SAFE_DIRECT_LIMIT} операций - ОБЯЗАТЕЛЬНО KV очередь`,
-      optimal: `Рекомендуется отправлять по ${Math.floor(SAFE_DIRECT_LIMIT * 0.8)}-${SAFE_DIRECT_LIMIT} операций за раз`,
-      warning: `Запросы > ${SAFE_DIRECT_LIMIT} операций БЕЗ KV будут отклонены`
+      anySize: "Все запросы обрабатываются через KV queue",
+      optimal: `Рекомендуется любое количество операций - они автоматически разобьются на jobs по ${SAFE_SUBREQUEST_LIMIT}`,
+      maxTotal: `До ${CONFIG.BATCH.MAX_OPERATIONS} операций в одном запросе`,
+      note: "KV queue должен быть доступен, иначе запросы будут отклонены"
     }
   });
 }
