@@ -122,8 +122,6 @@ const LoadingIndicator = ({ stage }) => {
 function useSkillsData(token) {
   // Ref для отслеживания времени начала загрузки
   const loadStartRef = useRef(null);
-  // Ref для актуального состояния (чтобы избежать повторных загрузок)
-  const stateRef = useRef(null);
   
   const [state, setState] = useState(() => {
     // Попытка загрузить из кэша при инициализации
@@ -162,16 +160,9 @@ function useSkillsData(token) {
     };
   });
 
-  // Всегда храним актуальное состояние в ref, чтобы callback не создавался заново
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
   const fetchSkills = useCallback(async (forceRefresh = false) => {
-    const currentState = stateRef.current || state;
-
     // Если есть кэш и не принудительное обновление
-    if (!forceRefresh && currentState.fromCache && currentState.skillGroups.length > 0) {
+    if (!forceRefresh && state.fromCache && state.skillGroups.length > 0) {
       return;
     }
     
@@ -288,7 +279,7 @@ function useSkillsData(token) {
         skillGroups: prev.fromCache ? prev.skillGroups : []
       }));
     }
-  }, [token]);
+  }, [token, state.fromCache, state.skillGroups.length]);
 
   const updateSkillScore = useCallback((pageId, role, value) => {
     setState(prev => {
