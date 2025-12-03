@@ -450,9 +450,9 @@ export default function SkillsAssessmentForm({ params }) {
               {fromCache && (
                 <span style={{ color: '#28a745', marginLeft: 8 }}>
                   (данные из кэша)
-				   <br/>
+				           </span>
+				<br/>
               Форма работает в тестовом режиме. При возникновении проблем, ошибок, а также с предложениями по улучшению можно писать в <a href ="https://t.me/hanbeio">telegram</a> 
-                </span>
               )}
             </div>
           </div>
