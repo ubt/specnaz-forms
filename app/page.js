@@ -19,7 +19,7 @@ export default function Home() {
           Система оценки компетенций сотрудников
         </p>
       </div>
-
+<p align="center">
 <iframe
 	width="1120"
 	height="630"
@@ -28,9 +28,9 @@ export default function Home() {
 	frameborder="0"
 	allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 	referrerpolicy="strict-origin-when-cross-origin"
-	style="margin:auto"
 	allowfullscreen="true">
 </iframe>
+</p>
     </main>
   );
 }
