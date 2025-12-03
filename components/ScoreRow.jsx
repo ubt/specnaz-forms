@@ -111,7 +111,7 @@ const ScoreRow = memo(({ item, onChange, currentScore }) => {
           gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
           gap: 12,
           minWidth: 320,
-          width: '100%',
+          flex: '0 0 360px',
           alignItems: 'start'
         }}>
           {[0, 1, 2, 3, 4, 5].map((score) => (
