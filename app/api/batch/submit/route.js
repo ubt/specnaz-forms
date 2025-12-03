@@ -11,16 +11,19 @@ import {
   addBatchToKVQueue,
   isKVConnected,
   initKV,
-  CLOUDFLARE_SUBREQUEST_LIMIT
+  CLOUDFLARE_SUBREQUEST_LIMIT,
+  SAFE_SUBREQUEST_LIMIT
 } from "@/lib/kv-queue";
 import { notion } from "@/lib/notion";
 import { logger } from "@/lib/logger";
 
-// Лимит для прямой обработки (с запасом от 50)
+// КРИТИЧНО: Используем безопасный лимит для прямой обработки
 const SAFE_DIRECT_LIMIT = Math.min(
   CONFIG.DIRECT_PROCESSING.MAX_OPERATIONS,
-  (CLOUDFLARE_SUBREQUEST_LIMIT || 50) - 10
+  SAFE_SUBREQUEST_LIMIT
 );
+
+logger.info(`[BATCH SUBMIT INIT] Safe direct limit set to ${SAFE_DIRECT_LIMIT} operations`);
 
 // POST - отправка batch операций
 export const POST = withErrorHandler(async (req) => {
@@ -68,20 +71,18 @@ export const POST = withErrorHandler(async (req) => {
   const forceKV = options.forceKV === true || body.forceKV === true;
   let processingMode = 'direct';
 
-  // КРИТИЧНО: Если операций больше лимита - требуем KV или разбиваем на части
+  // КРИТИЧНО: Если операций больше безопасного лимита - ОБЯЗАТЕЛЬНО используем KV
   if (totalOperations > SAFE_DIRECT_LIMIT) {
     if (kvAvailable) {
       processingMode = 'kv_queue';
-      logger.info(`[BATCH SUBMIT] Operations (${totalOperations}) > limit (${SAFE_DIRECT_LIMIT}), using KV queue`);
-    } else if (forceKV) {
-      throw Errors.ServiceUnavailable(
-        "Cloudflare KV недоступно",
-        `Для ${totalOperations} операций требуется KV. Максимум без KV: ${SAFE_DIRECT_LIMIT}`
-      );
+      logger.info(`[BATCH SUBMIT] Operations (${totalOperations}) > safe limit (${SAFE_DIRECT_LIMIT}), FORCING KV queue`);
     } else {
-      // Без KV - обрабатываем только часть операций и возвращаем информацию
-      processingMode = 'partial_direct';
-      logger.warn(`[BATCH SUBMIT] KV unavailable, will process only ${SAFE_DIRECT_LIMIT} of ${totalOperations} operations`);
+      // БЕЗ KV - строго отклоняем запросы, превышающие безопасный лимит
+      throw Errors.BadRequest(
+        "Слишком много операций для прямой обработки",
+        `Получено ${totalOperations} операций, максимум без KV: ${SAFE_DIRECT_LIMIT}. ` +
+        `KV недоступно. Разбейте запрос на части по ${SAFE_DIRECT_LIMIT} операций.`
+      );
     }
   }
 
@@ -128,39 +129,31 @@ export const POST = withErrorHandler(async (req) => {
     } catch (kvError) {
       logger.error('[BATCH SUBMIT] KV queue error:', kvError.message);
       
-      // Fallback к частичной прямой обработке
-      if (!forceKV) {
-        processingMode = 'partial_direct';
-        logger.warn('[BATCH SUBMIT] Falling back to partial direct processing');
-      } else {
-        throw Errors.ServiceUnavailable(
-          "Ошибка добавления в очередь KV",
-          kvError.message
-        );
-      }
+      // Если KV не работает - отклоняем запрос
+      throw Errors.ServiceUnavailable(
+        "Ошибка добавления в очередь KV",
+        `${kvError.message}. Для ${totalOperations} операций требуется работающий KV. Попробуйте позже или разбейте на части по ${SAFE_DIRECT_LIMIT} операций.`
+      );
     }
   }
 
-  // Прямая обработка (полная или частичная)
-  const processor = new NotionBatchProcessor(notion, processorOptions);
-  
-  // Определяем какие операции обрабатывать
-  const opsToProcess = processingMode === 'partial_direct' 
-    ? operations.slice(0, SAFE_DIRECT_LIMIT)
-    : operations;
-  
-  const deferredOps = processingMode === 'partial_direct'
-    ? operations.slice(SAFE_DIRECT_LIMIT)
-    : [];
+  // Прямая обработка - только если в пределах безопасного лимита
+  if (totalOperations > SAFE_DIRECT_LIMIT) {
+    throw Errors.InternalError(
+      "Внутренняя ошибка",
+      `Попытка прямой обработки ${totalOperations} операций при лимите ${SAFE_DIRECT_LIMIT}`
+    );
+  }
 
-  logger.info(`[BATCH SUBMIT] Direct processing ${opsToProcess.length} operations (${deferredOps.length} deferred)`);
-  
-  const result = await processor.processBatchDirectly(opsToProcess);
-  
+  const processor = new NotionBatchProcessor(notion, processorOptions);
+  logger.info(`[BATCH SUBMIT] Direct processing ${totalOperations} operations (within safe limit: ${SAFE_DIRECT_LIMIT})`);
+
+  const result = await processor.processBatchDirectly(operations);
+
   const successRate = result.stats.processedOperations > 0 ?
     (result.stats.successful / result.stats.processedOperations * 100).toFixed(1) : 0;
 
-  logger.info(`[BATCH SUBMIT] Direct completed: ${result.stats.successful}/${result.stats.processedOperations}, deferred: ${deferredOps.length}`);
+  logger.info(`[BATCH SUBMIT] Direct completed: ${result.stats.successful}/${result.stats.processedOperations}`);
 
   // Формируем ответ
   const response = {
@@ -170,27 +163,14 @@ export const POST = withErrorHandler(async (req) => {
     stats: {
       ...result.stats,
       totalRequested: totalOperations,
-      deferredCount: deferredOps.length,
-      subrequestLimit: CLOUDFLARE_SUBREQUEST_LIMIT || 50
+      subrequestLimit: CLOUDFLARE_SUBREQUEST_LIMIT,
+      safeLimit: SAFE_DIRECT_LIMIT
     },
     totalOperations: result.stats.processedOperations,
     message: `✅ ${result.stats.successful}/${result.stats.processedOperations} (${successRate}%)`,
-    completed: deferredOps.length === 0,
+    completed: true,
     timestamp: new Date().toISOString()
   };
-
-  // Если есть отложенные операции - информируем клиента
-  if (deferredOps.length > 0) {
-    response.warning = `⚠️ ${deferredOps.length} операций не обработано из-за лимита Cloudflare (${CLOUDFLARE_SUBREQUEST_LIMIT || 50} subrequests). Повторите запрос для оставшихся операций.`;
-    response.deferredOperations = deferredOps.map(op => op.pageId);
-    response.suggestion = 'Отправьте оставшиеся операции отдельным запросом или включите KV для автоматической очереди';
-  }
-
-  // Если были отложенные операции из-за лимита внутри процессора
-  if (result.remainingOperations && result.remainingOperations.length > 0) {
-    response.remainingOperations = result.remainingOperations.length;
-    response.warning = (response.warning || '') + ` Дополнительно ${result.remainingOperations.length} операций требуют повторной отправки.`;
-  }
 
   return NextResponse.json(response);
   
@@ -218,8 +198,9 @@ export async function GET() {
     },
     limits: {
       cloudflare: {
-        subrequestLimit: CLOUDFLARE_SUBREQUEST_LIMIT || 50,
-        safeDirectLimit: SAFE_DIRECT_LIMIT
+        hardLimit: CLOUDFLARE_SUBREQUEST_LIMIT,
+        safeLimit: SAFE_DIRECT_LIMIT,
+        explanation: `Жесткий лимит CF Workers: ${CLOUDFLARE_SUBREQUEST_LIMIT}, безопасный с запасом: ${SAFE_DIRECT_LIMIT}`
       },
       direct: CONFIG.DIRECT_PROCESSING,
       batch: CONFIG.BATCH
@@ -229,9 +210,10 @@ export async function GET() {
       hasJWTSecret: !!process.env.JWT_SECRET
     },
     recommendations: {
-      smallBatch: `До ${SAFE_DIRECT_LIMIT} операций - прямая обработка`,
-      largeBatch: `Более ${SAFE_DIRECT_LIMIT} операций - требуется KV очередь`,
-      optimal: 'Рекомендуется отправлять по 30-40 операций за раз'
+      smallBatch: `До ${SAFE_DIRECT_LIMIT} операций - прямая обработка (рекомендуется)`,
+      largeBatch: `Более ${SAFE_DIRECT_LIMIT} операций - ОБЯЗАТЕЛЬНО KV очередь`,
+      optimal: `Рекомендуется отправлять по ${Math.floor(SAFE_DIRECT_LIMIT * 0.8)}-${SAFE_DIRECT_LIMIT} операций за раз`,
+      warning: `Запросы > ${SAFE_DIRECT_LIMIT} операций БЕЗ KV будут отклонены`
     }
   });
 }
