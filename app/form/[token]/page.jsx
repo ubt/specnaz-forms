@@ -668,7 +668,20 @@ export default function SkillsAssessmentForm({ params }) {
                 transition: 'all 0.3s ease'
               }}></div>
             </div>
-           
+            
+            {/* Информация о батчах */}
+            {ratedSkills > MAX_OPERATIONS_PER_REQUEST && (
+              <div style={{ 
+                marginTop: 12, 
+                padding: '8px 12px', 
+                backgroundColor: '#fff3cd', 
+                borderRadius: 6,
+                fontSize: 13,
+                color: '#856404'
+              }}>
+                ℹ️ При отправке {ratedSkills} оценок они будут разбиты на {Math.ceil(ratedSkills / MAX_OPERATIONS_PER_REQUEST)} части для надёжной обработки
+              </div>
+            )}
           </div>
 
           {/* Форма */}
