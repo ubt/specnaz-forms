@@ -4,14 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScoreRow from '@/components/ScoreRow';
 
 // Константы
-const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const CACHE_TTL = 60 * 60 * 1000; // 60 минут
 const LOADING_STAGES = [
   'Проверка токена...',
   'Загрузка списка сотрудников...',
   'Загрузка навыков...',
   'Подготовка формы...'
 ];
-  
+ 
 // Компонент состояния (БЕЗ индикатора загрузки - он теперь только в основном компоненте)
 const StateHandler = ({ loading, error, empty, onRetry, children }) => {
   if (error) {
