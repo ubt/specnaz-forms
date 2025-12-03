@@ -6,7 +6,7 @@ export default function Home() {
       margin: '0 auto',
       fontFamily: 'system-ui, sans-serif'
     }}>
-      <div style={{ textAlign: 'center', marginBottom: 48,  margin: 0 auto  }}>
+      <div style={{ textAlign: 'center', marginBottom: 48,  margin: '0 auto' }}>
         <h1 style={{
           fontSize: 36,
           color: '#2c3e50',
