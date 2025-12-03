@@ -28,9 +28,8 @@ export async function GET() {
       environment: envInfo,
       status: allGood ? 'healthy' : 'misconfigured'
     });
-    
+
   } catch (error) {
-    console.error('[HEALTH CHECK ERROR]', error);
     return NextResponse.json({ 
       error: 'Health check failed',
       details: error.message 

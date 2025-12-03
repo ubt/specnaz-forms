@@ -9,14 +9,11 @@ const statusCache = new Map();
 const CACHE_TTL = 2000; // 2 секунды для быстрого обновления
 
 export async function GET(req, context) {
-  console.log('[BATCH STATUS] Получен GET запрос на проверку статуса');
-  
   // ИСПРАВЛЕНИЕ: Правильная инициализация KV без context.env
   try {
-    const kvInitResult = initKV(); // Убираем context?.env
-    console.log(`[BATCH STATUS] KV инициализация: ${kvInitResult ? 'успешно' : 'неудачно'}`);
+    initKV(); // Убираем context?.env
   } catch (initError) {
-    console.warn('[BATCH STATUS] Ошибка инициализации KV:', initError.message);
+    // KV initialization error
   }
   
   try {
@@ -29,7 +26,6 @@ export async function GET(req, context) {
     // Очистка кэша если запрошена
     if (clearCache) {
       statusCache.clear();
-      console.log('[BATCH STATUS] Кэш очищен по запросу');
     }
 
     // Валидация параметров
@@ -65,8 +61,6 @@ export async function GET(req, context) {
       );
     }
 
-    console.log(`[BATCH STATUS] Проверяем статус ${jobIdArray.length} задач`);
-
     // ИСПРАВЛЕНИЕ: Более надежная проверка доступности KV
     if (!isKVConnected()) {
       return NextResponse.json({
@@ -93,9 +87,8 @@ export async function GET(req, context) {
     // Проверяем кэш
     const cacheKey = `status_${jobIdArray.sort().join('_')}_${detailed}_${includeResults}`;
     const cached = statusCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log('[BATCH STATUS] Возвращаем закэшированный результат');
       return NextResponse.json({
         ...cached.data,
         cached: true,
@@ -106,18 +99,12 @@ export async function GET(req, context) {
     // ИСПРАВЛЕНИЕ: Получаем статусы задач из KV с обработкой ошибок
     let statuses;
     try {
-      console.log(`[BATCH STATUS] Запрашиваем статусы для ${jobIdArray.length} задач из KV`);
       statuses = await getKVBatchStatus(jobIdArray);
-      
+
       if (!statuses) {
-        console.warn('[BATCH STATUS] getKVBatchStatus вернул null');
         throw new Error('Не удалось получить статусы из KV');
       }
-      
-      console.log(`[BATCH STATUS] Получено ${statuses.length} статусов из KV`);
     } catch (kvError) {
-      console.error('[BATCH STATUS] Ошибка KV:', kvError.message);
-      
       return NextResponse.json({
         error: "Ошибка получения статуса из Cloudflare KV",
         details: kvError.message,
@@ -230,17 +217,9 @@ export async function GET(req, context) {
       oldestEntries.forEach(([key]) => statusCache.delete(key));
     }
 
-    console.log(`[BATCH STATUS] Ответ подготовлен. Прогресс: ${overallProgress}%, Завершено: ${isCompleted}`);
-
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error('[BATCH STATUS] Критическая ошибка:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
-
     return NextResponse.json(
       {
         error: "Внутренняя ошибка при получении статуса",
@@ -261,8 +240,7 @@ export async function POST(req) {
     
     if (body.action === 'clearCache') {
       statusCache.clear();
-      console.log('[BATCH STATUS] Кэш очищен через POST запрос');
-      
+
       return NextResponse.json({
         success: true,
         message: "Кэш статусов очищен",

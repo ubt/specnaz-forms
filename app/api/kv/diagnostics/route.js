@@ -6,8 +6,6 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import { initKV, isKVConnected, getKVDiagnostics } from "@/lib/kv-queue";
 
 export async function GET(req) {
-  console.log('[KV DIAGNOSTICS] 🔍 Запуск диагностики Cloudflare KV для Next.js на Pages');
-  
   const diagnostics = {
     timestamp: new Date().toISOString(),
     runtime: "edge",
@@ -34,11 +32,8 @@ export async function GET(req) {
       hasKVBinding: !!env.NOTION_QUEUE_KV,
       kvType: env.NOTION_QUEUE_KV ? typeof env.NOTION_QUEUE_KV : 'undefined'
     };
-    
-    console.log('[KV DIAGNOSTICS] ✅ getRequestContext() работает');
   } catch (error) {
     diagnostics.requestContext.error = error.message;
-    console.error('[KV DIAGNOSTICS] ❌ getRequestContext() недоступен:', error.message);
   }
 
   // 2. Проверка переменных окружения
@@ -51,8 +46,6 @@ export async function GET(req) {
   };
 
   // 3. Инициализация и тестирование KV
-  console.log('[KV DIAGNOSTICS] 🔧 Тестируем инициализацию KV...');
-  
   const kvInitResult = initKV();
   const kvDiagnosticsData = getKVDiagnostics();
   
@@ -70,8 +63,6 @@ export async function GET(req) {
 
   if (diagnostics.requestContext.hasKVBinding) {
     try {
-      console.log('[KV DIAGNOSTICS] 🧪 Тестируем подключение к KV...');
-      
       const connected = await isKVConnected();
       diagnostics.kvConnection.connected = connected;
       
@@ -79,18 +70,14 @@ export async function GET(req) {
         // Расширенное тестирование KV операций
         const testResults = await performKVTests();
         diagnostics.kvConnection.testResults = testResults;
-        console.log('[KV DIAGNOSTICS] ✅ KV тестирование завершено успешно');
       } else {
         diagnostics.kvConnection.error = 'KV connection test failed';
-        console.warn('[KV DIAGNOSTICS] ⚠️ KV подключение неудачно');
       }
     } catch (error) {
       diagnostics.kvConnection.error = error.message;
-      console.error('[KV DIAGNOSTICS] ❌ Ошибка тестирования KV:', error.message);
     }
   } else {
     diagnostics.kvConnection.error = 'KV binding not found in environment';
-    console.warn('[KV DIAGNOSTICS] ⚠️ KV binding не найден');
   }
 
   // 5. Анализ проблем и рекомендации
@@ -101,8 +88,6 @@ export async function GET(req) {
   const isHealthy = diagnostics.kvConnection.connected && diagnostics.requestContext.available;
   const statusCode = isHealthy ? 200 : 503;
 
-  console.log(`[KV DIAGNOSTICS] 📊 Диагностика завершена. Статус: ${isHealthy ? 'healthy' : 'issues'}`);
-  
   return NextResponse.json(diagnostics, { status: statusCode });
 }
 
@@ -122,19 +107,16 @@ async function performKVTests() {
 
   try {
     // Тест 1: Базовые операции (PUT, GET, DELETE)
-    console.log('[KV TEST] Тестируем базовые операции...');
     const testKey = `diagnostic_test_${Date.now()}`;
     const testValue = JSON.stringify({ test: true, timestamp: Date.now() });
     
     await kv.put(testKey, testValue);
     const retrieved = await kv.get(testKey);
     await kv.delete(testKey);
-    
+
     testResults.basicOperations = retrieved === testValue;
-    console.log(`[KV TEST] Базовые операции: ${testResults.basicOperations ? '✅' : '❌'}`);
 
     // Тест 2: ИСПРАВЛЕННАЯ TTL поддержка (минимум 60 секунд)
-    console.log('[KV TEST] Тестируем TTL...');
     const ttlKey = `ttl_test_${Date.now()}`;
     
     try {
@@ -143,19 +125,15 @@ async function performKVTests() {
       // Проверяем что значение сразу доступно
       const ttlValue = await kv.get(ttlKey);
       testResults.ttlSupport = ttlValue === 'ttl_test';
-      
+
       // Очищаем сразу, не ждем истечения
       await kv.delete(ttlKey);
-      
-      console.log(`[KV TEST] TTL поддержка: ${testResults.ttlSupport ? '✅' : '❌'}`);
     } catch (ttlError) {
       testResults.errors.push(`TTL error: ${ttlError.message}`);
       testResults.ttlSupport = false;
-      console.warn(`[KV TEST] TTL поддержка: ❌ - ${ttlError.message}`);
     }
 
     // Тест 3: ИСПРАВЛЕННЫЕ параллельные операции с задержками
-    console.log('[KV TEST] Тестируем параллельные операции...');
     try {
       const concurrentData = Array.from({ length: 3 }, (_, i) => ({
         key: `concurrent_${Date.now()}_${i}`,
@@ -184,18 +162,15 @@ async function performKVTests() {
         await kv.delete(key);
         await new Promise(resolve => setTimeout(resolve, 50));
       }
-      
+
       testResults.concurrentOperations = allRead;
-      console.log(`[KV TEST] Параллельные операции: ${testResults.concurrentOperations ? '✅' : '❌'}`);
-      
+
     } catch (concurrentError) {
       testResults.errors.push(`Concurrent operations error: ${concurrentError.message}`);
       testResults.concurrentOperations = false;
-      console.warn(`[KV TEST] Параллельные операции: ❌ - ${concurrentError.message}`);
     }
 
     // Тест 4: ИСПРАВЛЕННОЕ тестирование больших значений (меньший размер)
-    console.log('[KV TEST] Тестируем большие значения...');
     try {
       const largeKey = `large_test_${Date.now()}`;
       const largeValue = JSON.stringify({
@@ -206,16 +181,13 @@ async function performKVTests() {
       const largeRetrieved = await kv.get(largeKey);
       testResults.largeValueHandling = largeRetrieved === largeValue;
       await kv.delete(largeKey);
-      console.log(`[KV TEST] Большие значения: ${testResults.largeValueHandling ? '✅' : '❌'}`);
-      
+
     } catch (largeError) {
       testResults.errors.push(`Large value error: ${largeError.message}`);
       testResults.largeValueHandling = false;
-      console.warn(`[KV TEST] Большие значения: ❌ - ${largeError.message}`);
     }
 
     // Тест 5: ИСПРАВЛЕННЫЕ list операции
-    console.log('[KV TEST] Тестируем list операции...');
     try {
       // Сначала создаем тестовые записи
       const listTestKey = `list_test_${Date.now()}`;
@@ -223,20 +195,16 @@ async function performKVTests() {
       
       const listResult = await kv.list({ prefix: 'list_test_', limit: 10 });
       testResults.listOperations = listResult && Array.isArray(listResult.keys) && listResult.keys.length > 0;
-      
+
       // Очищаем
       await kv.delete(listTestKey);
-      
-      console.log(`[KV TEST] List операции: ${testResults.listOperations ? '✅' : '❌'}`);
     } catch (listError) {
       testResults.listOperations = false;
       testResults.errors.push(`List error: ${listError.message}`);
-      console.warn(`[KV TEST] List операции: ❌ - ${listError.message}`);
     }
 
   } catch (error) {
     testResults.errors.push(error.message);
-    console.error('[KV TEST] Ошибка тестирования:', error.message);
   }
 
   return testResults;
@@ -327,10 +295,8 @@ function analyzeKVIssues(diagnostics) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    
+
     if (body.action === 'force_test') {
-      console.log('[KV DIAGNOSTICS] 🧪 ПРИНУДИТЕЛЬНОЕ тестирование KV...');
-      
       try {
         const connected = await isKVConnected();
         
@@ -365,10 +331,8 @@ export async function POST(req) {
         }, { status: 500 });
       }
     }
-    
+
     if (body.action === 'cleanup') {
-      console.log('[KV DIAGNOSTICS] 🧹 Очистка тестовых данных...');
-      
       try {
         const { env } = getRequestContext();
         const kv = env.NOTION_QUEUE_KV;
@@ -387,7 +351,7 @@ export async function POST(req) {
               await new Promise(resolve => setTimeout(resolve, 50)); // Rate limiting
             }
           } catch (prefixError) {
-            console.warn(`[KV CLEANUP] Ошибка очистки префикса ${prefix}:`, prefixError.message);
+            // Cleanup error for prefix
           }
         }
         

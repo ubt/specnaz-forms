@@ -83,7 +83,6 @@ function useSkillsData(token) {
         if (cached) {
           const { data, timestamp } = JSON.parse(cached);
           if (Date.now() - timestamp < CACHE_TTL) {
-            console.log('[SKILLS] Using cached data');
             return {
               skillGroups: data.skillGroups || [],
               loading: false,
@@ -228,10 +227,8 @@ function useSkillsData(token) {
         fromCache: false,
         loadingStage: 3
       });
-      
+
     } catch (error) {
-      console.error('[SKILLS] Error:', error);
-      
       // Вычисляем время до ошибки
       const loadTime = loadStartRef.current 
         ? (performance.now() - loadStartRef.current) / 1000 
@@ -351,8 +348,6 @@ export default function SkillsAssessmentForm({ params }) {
         };
       });
 
-      console.log(`[SUBMIT] Sending ${operations.length} changed ratings (out of ${initialScoreData.size} total)`);
-
       const batchOptions = {
         batchSize: operations.length <= 20 ? 20 : 50,
         concurrency: 2,
@@ -393,8 +388,6 @@ export default function SkillsAssessmentForm({ params }) {
       }
 
     } catch (error) {
-      console.error('[SUBMIT] Error:', error);
-
       let errorMessage = `❌ Ошибка: ${error.message}`;
 
       if (error.message.includes('rate limit') || error.message.includes('429')) {
