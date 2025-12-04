@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [copyMsg, setCopyMsg] = useState("");
+  const [exportMsg, setExportMsg] = useState("");
 
   const validation = useMemo(() => {
     const errs = {};
@@ -90,6 +91,38 @@ export default function AdminPage() {
       setTimeout(() => setCopyMsg(""), 2000);
     }
   }, [links]);
+
+  const exportToNotion = useCallback(async () => {
+    try {
+      setExportMsg("⏳ Экспортируем...");
+
+      const exportData = links.map(link => ({
+        userId: link.userId,
+        url: link.url
+      }));
+
+      const res = await fetch("/api/admin/export-links", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": adminKey.trim()
+        },
+        body: JSON.stringify({ links: exportData })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      setExportMsg(`✅ Экспортировано: ${data.updated}`);
+      setTimeout(() => setExportMsg(""), 3000);
+    } catch (error) {
+      setExportMsg(`❌ ${error.message}`);
+      setTimeout(() => setExportMsg(""), 3000);
+    }
+  }, [links, adminKey]);
 
   return (
     <main style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
@@ -190,6 +223,30 @@ export default function AdminPage() {
                   {copyMsg}
                 </span>
               )}
+              {exportMsg && (
+                <span style={{
+                  fontSize: 14,
+                  color: exportMsg.includes("✅") ? "#28a745" : exportMsg.includes("⏳") ? "#007bff" : "#dc3545",
+                  fontWeight: 500
+                }}>
+                  {exportMsg}
+                </span>
+              )}
+              <button
+                onClick={exportToNotion}
+                style={{
+                  padding: "8px 16px",
+                  background: "#6f42c1",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                🔗 Экспорт ссылок в Notion
+              </button>
               <button
                 onClick={copyToExcel}
                 style={{
